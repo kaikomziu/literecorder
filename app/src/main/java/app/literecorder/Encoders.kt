@@ -1,0 +1,327 @@
+package app.literecorder
+
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
+import android.media.MediaMuxer
+import android.view.Surface
+import de.sciss.jump3r.mp3.BitStream
+import de.sciss.jump3r.mp3.GainAnalysis
+import de.sciss.jump3r.mp3.GetAudio
+import de.sciss.jump3r.mp3.ID3Tag
+import de.sciss.jump3r.mp3.Lame
+import de.sciss.jump3r.mp3.LameGlobalFlags
+import de.sciss.jump3r.mp3.MPEGMode
+import de.sciss.jump3r.mp3.Parse
+import de.sciss.jump3r.mp3.Presets
+import de.sciss.jump3r.mp3.Quantize
+import de.sciss.jump3r.mp3.QuantizePVT
+import de.sciss.jump3r.mp3.Reservoir
+import de.sciss.jump3r.mp3.Takehiro
+import de.sciss.jump3r.mp3.VBRTag
+import de.sciss.jump3r.mp3.Version
+import de.sciss.jump3r.mpg.Common
+import de.sciss.jump3r.mpg.Interface
+import de.sciss.jump3r.mpg.MPGLib
+import java.io.FileDescriptor
+import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+/**
+ * MediaMuxer の薄いラッパー。
+ * 全トラックがそろうまで start できないので、それまでのサンプルはメモリに貯めておく。
+ */
+class Muxer(fd: FileDescriptor, private val expectedTracks: Int) {
+    private val muxer = MediaMuxer(fd, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+    private var added = 0
+    var started = false
+        private set
+    var samples = 0L
+        private set
+    private val pending = ArrayList<Triple<Int, ByteArray, MediaCodec.BufferInfo>>()
+
+    @Synchronized
+    fun addTrack(format: MediaFormat): Int {
+        val t = muxer.addTrack(format)
+        added++
+        if (added == expectedTracks) {
+            muxer.start()
+            started = true
+            for ((track, data, info) in pending) {
+                muxer.writeSampleData(track, ByteBuffer.wrap(data), info)
+                samples++
+            }
+            pending.clear()
+        }
+        return t
+    }
+
+    @Synchronized
+    fun write(track: Int, buf: ByteBuffer, info: MediaCodec.BufferInfo) {
+        if (started) {
+            muxer.writeSampleData(track, buf, info)
+            samples++
+        } else {
+            val data = ByteArray(info.size)
+            buf.get(data)
+            val copy = MediaCodec.BufferInfo().apply { set(0, info.size, info.presentationTimeUs, info.flags) }
+            pending.add(Triple(track, data, copy))
+        }
+    }
+
+    @Synchronized
+    fun release() {
+        if (started) runCatching { muxer.stop() }
+        runCatching { muxer.release() }
+    }
+}
+
+/** 出力バッファを Muxer に流す共通処理（時刻を単調増加にそろえる） */
+private class TrackWriter(private val muxer: Muxer) {
+    var track = -1
+    private var lastPts = -1L
+
+    fun write(buf: ByteBuffer, info: MediaCodec.BufferInfo, baseUs: Long) {
+        if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0 || info.size <= 0 || track < 0) return
+        var pts = (info.presentationTimeUs - baseUs).coerceAtLeast(0)
+        if (pts <= lastPts) pts = lastPts + 1
+        lastPts = pts
+        info.presentationTimeUs = pts
+        buf.position(info.offset)
+        buf.limit(info.offset + info.size)
+        muxer.write(track, buf, info)
+    }
+}
+
+/**
+ * H.264 の画面エンコーダ。入力は Surface（VirtualDisplay の描画先）。
+ * Surface のタイムスタンプは System.nanoTime 基準なので、baseUs を引いて 0 始まりにする。
+ */
+class VideoEncoder(
+    val width: Int, val height: Int, fps: Int, bitrate: Int,
+    muxer: Muxer, private val baseUs: Long,
+) {
+    private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+    private val writer = TrackWriter(muxer)
+    private val muxerRef = muxer
+    val surface: Surface
+    private val thread = Thread({ drainLoop() }, "lr-video")
+
+    init {
+        val f = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+            // 120Hz 画面でも設定した fps 以上はエンコードしない（軽さ優先）
+            setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, fps.toFloat())
+            // 画面が止まっていても 0.5 秒ごとにはフレームを出す（シークしやすくする）
+            setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 500_000L)
+        }
+        codec.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        surface = codec.createInputSurface()
+        codec.start()
+    }
+
+    fun start() = thread.start()
+
+    private fun drainLoop() {
+        val info = MediaCodec.BufferInfo()
+        try {
+            while (true) {
+                val idx = codec.dequeueOutputBuffer(info, 10_000)
+                if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    writer.track = muxerRef.addTrack(codec.outputFormat)
+                } else if (idx >= 0) {
+                    codec.getOutputBuffer(idx)?.let { writer.write(it, info, baseUs) }
+                    codec.releaseOutputBuffer(idx, false)
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+                }
+            }
+        } catch (_: Exception) {
+            // エンコーダが止められた
+        }
+    }
+
+    fun stop() {
+        runCatching { codec.signalEndOfInputStream() }
+        thread.join(3000)
+        runCatching { codec.stop() }
+        runCatching { codec.release() }
+        runCatching { surface.release() }
+    }
+
+    companion object {
+        /** 端末のエンコーダが受け付けるサイズに収める（16 の倍数・上限内） */
+        fun fitSize(w0: Int, h0: Int, shortSide: Int): Pair<Int, Int> {
+            val caps = runCatching {
+                val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                val v = c.codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC).videoCapabilities
+                c.release()
+                v
+            }.getOrNull()
+            var scale = minOf(1.0, shortSide.toDouble() / minOf(w0, h0))
+            while (true) {
+                val w = align16(w0 * scale)
+                val h = align16(h0 * scale)
+                if (caps == null || caps.isSizeSupported(w, h) || scale < 0.2) return w to h
+                scale *= 0.9
+            }
+        }
+
+        private fun align16(v: Double) = maxOf(16, (v.toInt() / 16) * 16)
+    }
+}
+
+/** AAC-LC エンコーダ（MP4 の音声トラック） */
+class AacEncoder(
+    private val rate: Int, private val channels: Int, bitrate: Int,
+    private val muxer: Muxer,
+) {
+    private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+    private val writer = TrackWriter(muxer)
+    private val info = MediaCodec.BufferInfo()
+
+    init {
+        val f = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, rate, channels).apply {
+            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384)
+        }
+        codec.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        codec.start()
+    }
+
+    /** pcm: インターリーブ済み 16bit、samples: short の個数、ptsUs: 録画開始からの時刻 */
+    fun encode(pcm: ShortArray, samples: Int, ptsUs: Long) {
+        var off = 0
+        while (off < samples) {
+            val idx = codec.dequeueInputBuffer(10_000)
+            if (idx < 0) {
+                drain(false)
+                continue
+            }
+            val ib = codec.getInputBuffer(idx) ?: continue
+            ib.clear()
+            val n = minOf(samples - off, ib.remaining() / 2)
+            ib.order(ByteOrder.nativeOrder()).asShortBuffer().put(pcm, off, n)
+            val pts = ptsUs + (off / channels) * 1_000_000L / rate
+            codec.queueInputBuffer(idx, 0, n * 2, pts, 0)
+            off += n
+            drain(false)
+        }
+    }
+
+    private fun drain(untilEos: Boolean) {
+        var tries = 0
+        while (true) {
+            val idx = codec.dequeueOutputBuffer(info, if (untilEos) 10_000 else 0)
+            when {
+                idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> writer.track = muxer.addTrack(codec.outputFormat)
+                idx >= 0 -> {
+                    codec.getOutputBuffer(idx)?.let { writer.write(it, info, 0) }
+                    codec.releaseOutputBuffer(idx, false)
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
+                }
+                idx == MediaCodec.INFO_TRY_AGAIN_LATER -> if (!untilEos || ++tries > 100) return
+            }
+        }
+    }
+
+    fun finish() {
+        runCatching {
+            val idx = codec.dequeueInputBuffer(50_000)
+            if (idx >= 0) {
+                codec.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                drain(true)
+            }
+        }
+        runCatching { codec.stop() }
+        runCatching { codec.release() }
+    }
+}
+
+/**
+ * MP3 エンコーダ（jump3r = LAME の Java 移植）。
+ * jump3r の LameEncoder は Android に無い javax.sound を使うので、同じ配線を自前で組む。
+ */
+class Mp3Encoder(private val channels: Int, rate: Int, kbps: Int, private val out: OutputStream) {
+    private val lame = Lame()
+    private val gf: LameGlobalFlags
+    private var left = IntArray(0)
+    private var right = IntArray(0)
+    private var mp3buf = ByteArray(0)
+
+    init {
+        val ga = GainAnalysis()
+        val bs = BitStream()
+        val p = Presets()
+        val qupvt = QuantizePVT()
+        val qu = Quantize()
+        val vbr = VBRTag()
+        val ver = Version()
+        val id3 = ID3Tag()
+        val rv = Reservoir()
+        val tak = Takehiro()
+        val parse = Parse()
+        val mpg = MPGLib()
+        val intf = Interface()
+        val common = Common()
+        val gaud = GetAudio()
+        lame.setModules(ga, bs, p, qupvt, qu, vbr, ver, id3, mpg)
+        bs.setModules(ga, mpg, ver, vbr)
+        id3.setModules(bs, ver)
+        p.setModules(lame)
+        qu.setModules(bs, rv, qupvt, tak)
+        qupvt.setModules(tak, rv, lame.enc.psy)
+        rv.setModules(bs)
+        tak.setModules(qupvt)
+        vbr.setModules(lame, bs, ver)
+        gaud.setModules(parse, mpg)
+        parse.setModules(ver, id3, p)
+        mpg.setModules(intf, common)
+        intf.setModules(vbr, common)
+
+        gf = lame.lame_init()
+        gf.num_channels = channels
+        gf.in_samplerate = rate
+        gf.out_samplerate = rate
+        gf.mode = if (channels == 1) MPEGMode.MONO else MPEGMode.JOINT_STEREO
+        gf.brate = kbps
+        gf.quality = 7                // 速さ優先（0=最高品質〜9=最速）
+        gf.bWriteVbrTag = false       // 固定ビットレートで書きっぱなし（後から先頭を書き換えない）
+        id3.id3tag_init(gf)
+        gf.write_id3tag_automatic = false
+        gf.findReplayGain = false
+        check(lame.lame_init_params(gf) >= 0) { "MP3 エンコーダの初期化に失敗しました" }
+    }
+
+    /** pcm: インターリーブ済み 16bit、samples: short の個数 */
+    fun encode(pcm: ShortArray, samples: Int) {
+        val frames = samples / channels
+        if (left.size < frames) {
+            left = IntArray(frames)
+            right = IntArray(frames)
+            mp3buf = ByteArray((frames * 5 / 4) + 7200)
+        }
+        // jump3r の int 入力は 32bit フルスケール
+        if (channels == 1) {
+            for (i in 0 until frames) left[i] = pcm[i].toInt() shl 16
+        } else {
+            for (i in 0 until frames) {
+                left[i] = pcm[2 * i].toInt() shl 16
+                right[i] = pcm[2 * i + 1].toInt() shl 16
+            }
+        }
+        val n = lame.lame_encode_buffer_int(gf, left, if (channels == 1) left else right, frames, mp3buf, 0, mp3buf.size)
+        if (n > 0) out.write(mp3buf, 0, n)
+    }
+
+    fun finish() {
+        val buf = ByteArray(7200)
+        val n = lame.lame_encode_flush(gf, buf, 0, buf.size)
+        if (n > 0) out.write(buf, 0, n)
+        lame.lame_close(gf)
+    }
+}
