@@ -1,4 +1,4 @@
-# LiteRecorder のリリース用スクリプト
+﻿# LiteRecorder のリリース用スクリプト
 # 使い方: app/build.gradle.kts の versionCode / versionName を上げてから
 #   powershell -ExecutionPolicy Bypass -File tools/release.ps1 "変更点のメモ"
 param([string]$Notes = "")
