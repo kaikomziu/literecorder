@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LiteRecorder — 軽い、Android の録画アプリ</title>
-  <meta name="description" content="LiteRecorder は、約220KBの超軽量な Android 録画・録音アプリ。MP4 で画面を、MP3 で音だけを。マイク・内部音・両方を選べて、マイクにはボイスチェンジャーもかけられます。" />
+  <meta name="description" content="LiteRecorder は、約260KBの超軽量な Android 録画・録音アプリ。MP4 で画面を、MP3・M4A で音だけを。一時停止、画面に浮かぶボタン、ボイスチェンジャーまで、必要なものだけ。" />
   <meta property="og:title" content="LiteRecorder — 軽い、Android の録画アプリ" />
-  <meta property="og:description" content="約220KB。画面も、声も、ワンタップで。" />
+  <meta property="og:description" content="約260KB。画面も、声も、ワンタップで。" />
   <meta property="og:image" content="https://kaikomziu.github.io/literecorder/icon.png" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="icon" href="favicon.png" />
@@ -45,7 +45,7 @@
     .center { text-align: center; }
     .eyebrow { font-size: 21px; font-weight: 600; color: var(--accent); margin: 0 0 6px; }
     h1, h2, h3 { margin: 0; letter-spacing: -.01em; }
-    h1, h2, h3, .lead, .tile p, .step p { word-break: auto-phrase; text-wrap: balance; }
+    h1, h2, h3, .lead, .tile p, .step p, .newgrid span { word-break: auto-phrase; text-wrap: balance; }
     h1 { font-size: clamp(38px, 10.5vw, 84px); font-weight: 700; line-height: 1.08; }
     h2 { font-size: clamp(34px, 5.4vw, 56px); font-weight: 700; line-height: 1.12; }
     .lead { font-size: clamp(19px, 2.4vw, 24px); color: var(--sub); font-weight: 500; margin: 18px auto 0; max-width: 640px; }
@@ -78,6 +78,19 @@
     .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 26px; }
     .chip { background: #fff; border-radius: 980px; padding: 7px 15px; font-size: 15px; font-weight: 500; }
     .chip.on { background: var(--accent); color: #fff; }
+
+    .tile img.shot { margin-top: auto; padding-top: 24px; width: 100%; border-radius: 14px; }
+    .tile img.pill { margin: auto auto 0; padding-top: 24px; width: 260px; max-width: 100%; }
+    .tile.dark-tile { background: #1d1d1f; color: #f5f5f7; }
+    .tile.dark-tile p { color: #a1a1a6; }
+    .news { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); background: var(--bg2);
+      border-radius: 980px; padding: 6px 14px; margin-bottom: 18px; }
+    .news b { color: var(--accent); }
+    .news:hover { text-decoration: none; background: #ebebef; }
+    .newgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 56px; text-align: left; }
+    .newgrid div { background: #fff; border-radius: 20px; padding: 22px 20px; }
+    .newgrid b { display: block; font-size: 17px; }
+    .newgrid span { color: var(--sub); font-size: 14px; }
 
     /* 黒いセクション */
     .dark { background: #000; color: #f5f5f7; overflow: hidden; }
@@ -122,6 +135,7 @@
       .split .text { text-align: center; }
       .voices { justify-items: center; }
       .steps { grid-template-columns: 1fr; }
+      .newgrid { grid-template-columns: 1fr 1fr; }
       .phone { width: 260px; }
     }
   </style>
@@ -131,6 +145,7 @@
     <div class="in">
       <a class="brand" href="#"><img src="favicon.png" alt="" />LiteRecorder</a>
       <div class="links">
+        <a href="#new">新機能</a>
         <a href="#features">機能</a>
         <a href="#voice">ボイスチェンジャー</a>
         <a href="#install">インストール</a>
@@ -141,9 +156,10 @@
 
   <section class="hero center">
     <div class="wrap">
+      <a class="news reveal" href="#new"><b>New</b> 1.1 — 一時停止・浮かぶボタン・M4A ほか ›</a>
       <p class="eyebrow reveal">LiteRecorder</p>
       <h1 class="reveal">録画は、<br />軽いほうがいい。</h1>
-      <p class="lead reveal">約220KB。画面も、声も、ワンタップで。</p>
+      <p class="lead reveal">約260KB。画面も、声も、ワンタップで。</p>
       <div class="ctas reveal">
         <a class="btn" href="https://github.com/kaikomziu/literecorder/releases/latest/download/LiteRecorder.apk">無料でダウンロード</a>
         <a class="more" href="#features">詳しく見る</a>
@@ -156,9 +172,31 @@
     <div class="wrap">
       <h2 class="reveal">小さい。でも、ちゃんと録れる。</h2>
       <div class="grid3">
-        <div class="stat reveal"><b>220KB</b><span>アプリ全体のサイズ</span></div>
-        <div class="stat reveal"><b>MP4 / MP3</b><span>画面録画も、音だけ録音も</span></div>
+        <div class="stat reveal"><b>260KB</b><span>アプリ全体のサイズ</span></div>
+        <div class="stat reveal"><b>MP4 / MP3 / M4A</b><span>画面録画も、音だけ録音も</span></div>
         <div class="stat reveal"><b>0</b><span>広告・アカウント登録</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="new" class="center" style="background:var(--bg2);padding-top:40px">
+    <div class="wrap">
+      <p class="eyebrow reveal">LiteRecorder 1.1</p>
+      <h2 class="reveal">13 の新機能。<br />それでも、軽いまま。</h2>
+      <div class="newgrid">
+        <div class="reveal"><b>横向きで録る</b><span>横画面のゲームも全面で</span></div>
+        <div class="reveal"><b>一時停止</b><span>いらない場面をとばす</span></div>
+        <div class="reveal"><b>浮かぶボタン</b><span>どのアプリからでも操作</span></div>
+        <div class="reveal"><b>カウントダウン</b><span>3秒・5秒で写り込み防止</span></div>
+        <div class="reveal"><b>クイック設定</b><span>通知パネルから1タップ</span></div>
+        <div class="reveal"><b>音量バランス</b><span>声とゲーム音を調整</span></div>
+        <div class="reveal"><b>ノイズ除去</b><span>マイクの雑音をカット</span></div>
+        <div class="reveal"><b>試し聴き</b><span>イヤホンで声を確認</span></div>
+        <div class="reveal"><b>声の高さを調整</b><span>半音単位で 1〜12</span></div>
+        <div class="reveal"><b>録画一覧</b><span>再生・共有・削除</span></div>
+        <div class="reveal"><b>M4A</b><span>MP3 より小さい音声</span></div>
+        <div class="reveal"><b>自動停止</b><span>時間・サイズの上限</span></div>
+        <div class="reveal"><b>English</b><span>英語表示に対応</span></div>
       </div>
     </div>
   </section>
@@ -173,30 +211,44 @@
         <div class="tile wide reveal">
           <p class="k">録る音</p>
           <h3>マイク、内部音、その両方。</h3>
-          <p>ゲーム実況はゲームの音と自分の声をいっしょに。解説動画は声だけ。音なしの画面録画もできます。</p>
+          <p>ゲーム実況はゲームの音と自分の声をいっしょに。それぞれの音量はスライダーで調整でき、マイクのノイズ除去も選べます。</p>
           <div class="chips"><span class="chip">なし</span><span class="chip">マイク</span><span class="chip">内部音</span><span class="chip on">両方</span></div>
         </div>
         <div class="tile reveal">
-          <p class="k">MP3</p>
-          <h3>音だけなら、MP3 で。</h3>
-          <p>画面はいらないときは音声だけを MP3 で保存。96〜192kbps から選べます。</p>
+          <p class="k">MP3 / M4A</p>
+          <h3>音だけなら、MP3 か M4A で。</h3>
+          <p>画面はいらないときは音声だけを保存。M4A なら同じ音質でもっと小さく。96〜192kbps から選べます。</p>
           <div class="chips"><span class="chip">96kbps</span><span class="chip on">128kbps</span><span class="chip">192kbps</span></div>
         </div>
         <div class="tile reveal">
           <p class="k">画質</p>
-          <h3>大きさは、自分で決める。</h3>
-          <p>解像度・フレームレート・画質を選ぶだけ。H.264 でコンパクトに保存します。</p>
-          <div class="chips"><span class="chip">1080p</span><span class="chip on">720p</span><span class="chip">480p</span><span class="chip on">30fps</span><span class="chip">60fps</span></div>
+          <h3>横向きのゲームも、全面で。</h3>
+          <p>向き（縦・横）、解像度、フレームレート、画質を選ぶだけ。H.264 でコンパクトに保存します。</p>
+          <div class="chips"><span class="chip">縦</span><span class="chip on">横</span><span class="chip on">720p</span><span class="chip on">30fps</span><span class="chip">60fps</span></div>
+        </div>
+        <div class="tile dark-tile reveal">
+          <p class="k">浮かぶボタン</p>
+          <h3>どのアプリからでも、<br />止める・休む。</h3>
+          <p>画面のすみに小さなボタン。ドラッグで好きな場所へ。一時停止は通知やクイック設定からも。</p>
+          <img class="pill" src="pill.png" alt="一時停止・停止ボタンと経過時間" width="392" height="125" loading="lazy" />
         </div>
         <div class="tile reveal">
-          <p class="k">停止</p>
-          <h3>通知からすぐ止める。</h3>
-          <p>録画中は通知に経過時間を表示。「停止して保存」をタップすればそのまま保存されます。</p>
+          <p class="k">録画一覧</p>
+          <h3>見る、送る、消す。</h3>
+          <p>録ったファイルはアプリの中で一覧に。保存先はいつもの Movies / Music フォルダです。</p>
+          <img class="shot" src="screen3.webp" alt="録画一覧の画面" width="600" height="566" loading="lazy" />
         </div>
         <div class="tile reveal">
-          <p class="k">保存先</p>
-          <h3>いつものフォルダに。</h3>
-          <p>動画は Movies/LiteRecorder、音声は Music/LiteRecorder へ。ギャラリーや音楽アプリからすぐ開けます。</p>
+          <p class="k">カウントダウン・クイック設定</p>
+          <h3>始め方も、軽く。</h3>
+          <p>通知パネルのタイルから1タップで開始。3秒・5秒のカウントダウンで、アプリの画面が写り込みません。</p>
+          <div class="chips"><span class="chip">なし</span><span class="chip on">3秒</span><span class="chip">5秒</span></div>
+        </div>
+        <div class="tile reveal">
+          <p class="k">自動停止</p>
+          <h3>撮りっぱなしでも、安心。</h3>
+          <p>時間（5分〜1時間）やサイズ（100MB〜1GB）の上限に達したら、自動で止めて保存します。</p>
+          <div class="chips"><span class="chip on">10分</span><span class="chip">30分</span><span class="chip on">500MB</span></div>
         </div>
       </div>
     </div>
@@ -209,13 +261,14 @@
         <h2 class="reveal">声だけ、変える。</h2>
         <p class="lead reveal" style="margin-left:0">エフェクトはマイクにだけかかります。ゲームや動画の音はそのまま、自分の声だけを変えて録れます。</p>
         <ul class="voices">
-          <li class="reveal"><b>高い声</b><span>1.5 倍のピッチに</span></li>
-          <li class="reveal"><b>低い声</b><span>落ち着いた低めの声に</span></li>
+          <li class="reveal"><b>高い声</b><span>半音 1〜12 で高さを調整</span></li>
+          <li class="reveal"><b>低い声</b><span>落ち着いた低めの声に、幅も調整</span></li>
           <li class="reveal"><b>ロボ</b><span>機械っぽい金属的な声に</span></li>
           <li class="reveal"><b>エコー</b><span>広い場所で話しているように</span></li>
+          <li class="reveal"><b>試し聴き</b><span>録る前にイヤホンで自分の声を確認</span></li>
         </ul>
       </div>
-      <div class="phone reveal"><img src="screen2.webp" alt="ボイスチェンジャーを使って録音中の画面" width="600" height="1261" loading="lazy" /></div>
+      <div class="phone reveal"><img src="screen2.webp" alt="音とボイスチェンジャーの設定画面" width="600" height="1122" loading="lazy" /></div>
     </div>
   </section>
 
@@ -223,7 +276,7 @@
     <div class="wrap">
       <p class="big reveal">オフライン。</p>
       <h2 class="reveal" style="margin-top:18px">録ったものは、端末から出ない。</h2>
-      <p class="lead reveal">LiteRecorder はインターネットの権限を持っていません。使う許可はマイクと通知だけ。</p>
+      <p class="lead reveal">LiteRecorder はインターネットの権限を持っていません。使う許可はマイクと通知、浮かぶボタンを使うときだけ「他のアプリの上に表示」。</p>
     </div>
   </section>
 
@@ -239,7 +292,7 @@
         <a class="btn" href="https://github.com/kaikomziu/literecorder/releases/latest/download/LiteRecorder.apk">APK をダウンロード</a>
         <a class="more" href="https://github.com/kaikomziu/literecorder/releases">すべてのバージョン</a>
       </div>
-      <p class="meta reveal"><span id="ver">最新版</span> ・ Android 10 以上 ・ 無料</p>
+      <p class="meta reveal"><span id="ver">最新版</span> ・ Android 10 以上 ・ 無料 ・ 日本語 / English</p>
     </div>
   </section>
 

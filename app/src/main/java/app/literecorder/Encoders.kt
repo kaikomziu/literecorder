@@ -4,6 +4,7 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.os.Bundle
 import android.view.Surface
 import de.sciss.jump3r.mp3.BitStream
 import de.sciss.jump3r.mp3.GainAnalysis
@@ -39,6 +40,9 @@ class Muxer(fd: FileDescriptor, private val expectedTracks: Int) {
         private set
     var samples = 0L
         private set
+    /** 書き込んだバイト数（サイズ上限の判定用） */
+    @Volatile var bytes = 0L
+        private set
     private val pending = ArrayList<Triple<Int, ByteArray, MediaCodec.BufferInfo>>()
 
     @Synchronized
@@ -59,6 +63,7 @@ class Muxer(fd: FileDescriptor, private val expectedTracks: Int) {
 
     @Synchronized
     fun write(track: Int, buf: ByteBuffer, info: MediaCodec.BufferInfo) {
+        bytes += info.size
         if (started) {
             muxer.writeSampleData(track, buf, info)
             samples++
@@ -82,9 +87,9 @@ private class TrackWriter(private val muxer: Muxer) {
     var track = -1
     private var lastPts = -1L
 
-    fun write(buf: ByteBuffer, info: MediaCodec.BufferInfo, baseUs: Long) {
+    fun write(buf: ByteBuffer, info: MediaCodec.BufferInfo, baseUs: Long, pausedUs: Long = 0) {
         if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0 || info.size <= 0 || track < 0) return
-        var pts = (info.presentationTimeUs - baseUs).coerceAtLeast(0)
+        var pts = (info.presentationTimeUs - baseUs - pausedUs).coerceAtLeast(0)
         if (pts <= lastPts) pts = lastPts + 1
         lastPts = pts
         info.presentationTimeUs = pts
@@ -100,7 +105,7 @@ private class TrackWriter(private val muxer: Muxer) {
  */
 class VideoEncoder(
     val width: Int, val height: Int, fps: Int, bitrate: Int,
-    muxer: Muxer, private val baseUs: Long,
+    muxer: Muxer, private val baseUs: Long, private val clock: PauseClock,
 ) {
     private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
     private val writer = TrackWriter(muxer)
@@ -128,13 +133,29 @@ class VideoEncoder(
 
     private fun drainLoop() {
         val info = MediaCodec.BufferInfo()
+        var wasPaused = false
+        var needKey = false
         try {
             while (true) {
                 val idx = codec.dequeueOutputBuffer(info, 10_000)
+                val paused = clock.paused
+                if (wasPaused && !paused) {
+                    // 再開したら、続きがきれいに再生できるようキーフレームを出してもらう
+                    runCatching { codec.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) }
+                }
+                wasPaused = paused
                 if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     writer.track = muxerRef.addTrack(codec.outputFormat)
                 } else if (idx >= 0) {
-                    codec.getOutputBuffer(idx)?.let { writer.write(it, info, baseUs) }
+                    val isKey = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
+                    if (paused) {
+                        needKey = true // 一時停止中のフレームは捨てる
+                    } else if (needKey && !isKey) {
+                        // キーフレームが来るまで捨てる
+                    } else {
+                        needKey = false
+                        codec.getOutputBuffer(idx)?.let { writer.write(it, info, baseUs, clock.pausedUs()) }
+                    }
                     codec.releaseOutputBuffer(idx, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
                 }
@@ -174,7 +195,44 @@ class VideoEncoder(
     }
 }
 
-/** AAC-LC エンコーダ（MP4 の音声トラック） */
+/**
+ * 一時停止の時計。止まっていた時間の合計を、映像の時刻から引くのに使う。
+ * （音声は止まっている間のデータを捨てて、サンプル数から時刻を作るので自然にそろう）
+ */
+class PauseClock {
+    @Volatile var paused = false
+        private set
+    private var pausedTotalNs = 0L
+    private var pauseStartNs = 0L
+
+    @Synchronized
+    fun pause() {
+        if (paused) return
+        pauseStartNs = System.nanoTime()
+        paused = true
+    }
+
+    @Synchronized
+    fun resume() {
+        if (!paused) return
+        pausedTotalNs += System.nanoTime() - pauseStartNs
+        paused = false
+    }
+
+    /** これまでに止まっていた時間（µs、今止まっている分は含まない） */
+    @Synchronized
+    fun pausedUs() = pausedTotalNs / 1000
+
+    /** 開始時刻 startNs からの、止まっていた時間を除いた経過（ms） */
+    @Synchronized
+    fun activeMs(startNs: Long): Long {
+        val now = System.nanoTime()
+        val pausedNow = if (paused) now - pauseStartNs else 0
+        return (now - startNs - pausedTotalNs - pausedNow) / 1_000_000
+    }
+}
+
+/** AAC-LC エンコーダ（MP4 の音声トラック・M4A） */
 class AacEncoder(
     private val rate: Int, private val channels: Int, bitrate: Int,
     private val muxer: Muxer,
@@ -297,8 +355,8 @@ class Mp3Encoder(private val channels: Int, rate: Int, kbps: Int, private val ou
         check(lame.lame_init_params(gf) >= 0) { "MP3 エンコーダの初期化に失敗しました" }
     }
 
-    /** pcm: インターリーブ済み 16bit、samples: short の個数 */
-    fun encode(pcm: ShortArray, samples: Int) {
+    /** pcm: インターリーブ済み 16bit、samples: short の個数。書いたバイト数を返す */
+    fun encode(pcm: ShortArray, samples: Int): Int {
         val frames = samples / channels
         if (left.size < frames) {
             left = IntArray(frames)
@@ -316,6 +374,7 @@ class Mp3Encoder(private val channels: Int, rate: Int, kbps: Int, private val ou
         }
         val n = lame.lame_encode_buffer_int(gf, left, if (channels == 1) left else right, frames, mp3buf, 0, mp3buf.size)
         if (n > 0) out.write(mp3buf, 0, n)
+        return maxOf(n, 0)
     }
 
     fun finish() {

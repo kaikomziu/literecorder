@@ -2,21 +2,18 @@ package app.literecorder
 
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.sin
 
 /**
  * マイク用の軽量ボイスチェンジャー（モノラル 16bit PCM をその場で書き換える）。
- * - 高い声 / 低い声: 2 本の読み出しヘッドをずらして重ねるディレイ式ピッチシフト
+ * - 高い声 / 低い声: 2 本の読み出しヘッドをずらして重ねるディレイ式ピッチシフト（幅は半音単位）
  * - ロボット: リング変調
  * - エコー: フィードバック付きディレイ
  */
-class VoiceChanger(private val type: Voice, rate: Int) {
-    // ピッチシフト
-    private val ratio = when (type) {
-        Voice.HIGH -> 1.5
-        Voice.LOW -> 0.72
-        else -> 1.0
-    }
+class VoiceChanger(private val type: Voice, rate: Int, semitones: Int = 0) {
+    // ピッチシフト（半音 n 個ぶん = 2^(n/12) 倍）
+    private val ratio = if (type == Voice.HIGH || type == Voice.LOW) 2.0.pow(semitones / 12.0) else 1.0
     private val win = rate * 0.04          // 窓の長さ（約 40ms）
     private val ring = FloatArray(4096)    // 窓より長いリングバッファ
     private var w = 0

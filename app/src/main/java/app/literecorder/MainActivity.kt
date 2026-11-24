@@ -8,49 +8,78 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings as SysSettings
 import android.view.Gravity
 import android.view.View
-import android.view.WindowInsets
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowInsets
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
-/** 画面は 1 枚だけ。AndroidX を使わずコードで組んで軽くしている */
+/** メイン画面。AndroidX を使わずコードで組んで軽くしている */
 class MainActivity : Activity() {
+
+    companion object {
+        const val ACTION_QUICK_START = "app.literecorder.QUICK_START"
+        private const val REQ_PERM = 1
+        private const val REQ_CAPTURE = 2
+        private const val REQ_PERM_PREVIEW = 3
+    }
 
     private lateinit var s: Settings
     private val ui = Handler(Looper.getMainLooper())
+    private var preview: VoicePreview? = null
+    /** クイック設定タイルから開かれた（開始後にアプリを閉じる） */
+    private var quickLaunch = false
 
-    private lateinit var recButton: FrameLayout
     private lateinit var recDot: View
+    private lateinit var pauseBtn: FrameLayout
+    private lateinit var pauseIcon: IconView
     private lateinit var recLabel: TextView
     private lateinit var recTime: TextView
-    private lateinit var lastCard: LinearLayout
+    private lateinit var lastRow: LinearLayout
     private lateinit var lastText: TextView
     private lateinit var settingsBox: LinearLayout
 
     private lateinit var segFormat: Seg
+    private lateinit var segKbps: Seg
     private lateinit var segAudio: Seg
+    private lateinit var sliderMic: Slider
+    private lateinit var sliderInt: Slider
+    private lateinit var segNs: Seg
     private lateinit var segVoice: Seg
+    private lateinit var sliderPitch: Slider
+    private lateinit var previewBtn: TextView
+    private lateinit var videoCard: LinearLayout
+    private lateinit var segOrient: Seg
     private lateinit var segRes: Seg
     private lateinit var segFps: Seg
     private lateinit var segQuality: Seg
-    private lateinit var segMp3: Seg
+    private lateinit var segCountdown: Seg
+    private lateinit var segOverlay: Seg
     private lateinit var segHide: Seg
-    private lateinit var videoGroup: LinearLayout
+    private lateinit var segLimitTime: Seg
+    private lateinit var segLimitSize: Seg
+
+    private val kbpsList = listOf(96, 128, 192)
+    private val resList = listOf(1080, 720, 480)
+    private val countdownList = listOf(0, 3, 5)
+    private val limitTimeList = listOf(0, 5, 10, 30, 60)
+    private val limitSizeList = listOf(0, 100, 500, 1000)
 
     private val tick = object : Runnable {
         override fun run() {
             refreshState()
-            if (RecorderService.state == RecorderService.State.RECORDING) ui.postDelayed(this, 500)
+            if (RecorderService.state != RecorderService.State.IDLE) ui.postDelayed(this, 250)
         }
     }
 
@@ -59,11 +88,25 @@ class MainActivity : Activity() {
         s = Settings(this)
         setContentView(buildUi())
         refreshSettings()
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(i: Intent?) {
+        if (i?.action != ACTION_QUICK_START) return
+        i.action = null
+        quickLaunch = true
+        if (RecorderService.state == RecorderService.State.IDLE) onRecordClick()
     }
 
     override fun onResume() {
         super.onResume()
         RecorderService.listener = { refreshState(); ui.removeCallbacks(tick); ui.post(tick) }
+        refreshSettings()
         ui.post(tick)
     }
 
@@ -71,16 +114,22 @@ class MainActivity : Activity() {
         super.onPause()
         RecorderService.listener = null
         ui.removeCallbacks(tick)
+        stopPreview()
     }
+
+    private fun t(id: Int, vararg args: Any) = getString(id, *args)
+    private fun dp(v: Float) = Ui.dp(this, v)
+    private fun dpi(v: Int) = Ui.dpi(this, v)
 
     // ---------- 録画の開始 ----------
 
     private fun onRecordClick() {
         when (RecorderService.state) {
-            RecorderService.State.RECORDING -> { RecorderService.stop(this); return }
+            RecorderService.State.RECORDING, RecorderService.State.COUNTDOWN -> { RecorderService.stop(this); return }
             RecorderService.State.STOPPING -> return
             RecorderService.State.IDLE -> Unit
         }
+        stopPreview()
         val need = ArrayList<String>()
         if (s.effectiveAudio != AudioSrc.NONE && !granted(Manifest.permission.RECORD_AUDIO)) {
             need += Manifest.permission.RECORD_AUDIO
@@ -94,12 +143,16 @@ class MainActivity : Activity() {
     private fun granted(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        if (requestCode != REQ_PERM) return
-        if (s.effectiveAudio != AudioSrc.NONE && !granted(Manifest.permission.RECORD_AUDIO)) {
-            Toast.makeText(this, "音を録るにはマイクの許可が必要です（内部音でも必要です）", Toast.LENGTH_LONG).show()
-            return
+        when (requestCode) {
+            REQ_PERM -> {
+                if (s.effectiveAudio != AudioSrc.NONE && !granted(Manifest.permission.RECORD_AUDIO)) {
+                    Toast.makeText(this, R.string.toast_need_mic, Toast.LENGTH_LONG).show()
+                    return
+                }
+                proceed()
+            }
+            REQ_PERM_PREVIEW -> if (granted(Manifest.permission.RECORD_AUDIO)) togglePreview()
         }
-        proceed()
     }
 
     private fun proceed() {
@@ -109,6 +162,8 @@ class MainActivity : Activity() {
             startActivityForResult(mpm.createScreenCaptureIntent(), REQ_CAPTURE)
         } else {
             RecorderService.start(this, 0, null)
+            if (quickLaunch) moveTaskToBack(true)
+            quickLaunch = false
         }
     }
 
@@ -118,11 +173,45 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQ_CAPTURE) return
         if (resultCode != RESULT_OK || data == null) {
-            Toast.makeText(this, "画面キャプチャがキャンセルされました", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.toast_capture_cancelled, Toast.LENGTH_SHORT).show()
+            quickLaunch = false
             return
         }
         RecorderService.start(this, resultCode, data)
-        if (s.format == OutFormat.MP4 && s.hideOnStart) moveTaskToBack(true)
+        if ((s.format.isVideo && s.hideOnStart) || quickLaunch) moveTaskToBack(true)
+        quickLaunch = false
+    }
+
+    // ---------- 試し聴き ----------
+
+    private fun togglePreview() {
+        if (preview?.isRunning == true) {
+            stopPreview()
+            return
+        }
+        if (RecorderService.state != RecorderService.State.IDLE) return
+        if (!granted(Manifest.permission.RECORD_AUDIO)) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_PERM_PREVIEW)
+            return
+        }
+        if (!VoicePreview.headphonesConnected(this)) {
+            Toast.makeText(this, R.string.preview_need_headphones, Toast.LENGTH_LONG).show()
+            return
+        }
+        preview = VoicePreview(s).also { it.start() }
+        refreshPreviewButton()
+    }
+
+    private fun stopPreview() {
+        preview?.stop()
+        preview = null
+        if (::previewBtn.isInitialized) refreshPreviewButton()
+    }
+
+    private fun refreshPreviewButton() {
+        val on = preview?.isRunning == true
+        previewBtn.text = t(if (on) R.string.preview_stop else R.string.preview_start)
+        previewBtn.background = Ui.rounded(if (on) Ui.ACCENT else Ui.SEG_BG, dp(10f))
     }
 
     // ---------- 画面の更新 ----------
@@ -130,167 +219,316 @@ class MainActivity : Activity() {
     private fun refreshState() {
         val st = RecorderService.state
         val recording = st == RecorderService.State.RECORDING
-        val mp4 = s.format == OutFormat.MP4
-        (recDot.background as GradientDrawable).cornerRadius = if (recording) dp(8f) else dp(40f)
+        val paused = recording && RecorderService.paused
+        val video = s.format.isVideo
+        val busy = st == RecorderService.State.RECORDING || st == RecorderService.State.COUNTDOWN
+        (recDot.background as GradientDrawable).cornerRadius = if (busy) dp(8f) else dp(40f)
+        pauseBtn.visibility = if (recording) View.VISIBLE else View.INVISIBLE
+        val k = if (paused) IconView.Kind.PLAY else IconView.Kind.PAUSE
+        if (pauseIcon.kind != k) {
+            pauseIcon.kind = k
+            pauseIcon.invalidate()
+        }
+        pauseBtn.contentDescription = t(if (paused) R.string.btn_resume else R.string.btn_pause)
         recLabel.text = when (st) {
-            RecorderService.State.RECORDING -> "タップで停止"
-            RecorderService.State.STOPPING -> "保存中…"
-            RecorderService.State.IDLE -> if (mp4) "タップで録画開始" else "タップで録音開始"
+            RecorderService.State.RECORDING -> if (paused) t(R.string.state_paused) else t(R.string.state_tap_stop)
+            RecorderService.State.COUNTDOWN -> t(R.string.state_countdown)
+            RecorderService.State.STOPPING -> t(R.string.state_saving)
+            RecorderService.State.IDLE -> if (video) t(R.string.state_tap_start_video) else t(R.string.state_tap_start_audio)
         }
-        recTime.text = if (recording) {
-            val sec = (System.currentTimeMillis() - RecorderService.startedAt) / 1000
-            "%02d:%02d".format(sec / 60, sec % 60)
-        } else {
-            if (mp4) "MP4" else "MP3"
+        recTime.text = when (st) {
+            RecorderService.State.RECORDING -> {
+                val sec = RecorderService.activeMs() / 1000
+                "%02d:%02d".format(sec / 60, sec % 60)
+            }
+            RecorderService.State.COUNTDOWN -> (RecorderService.countdownLeft + 1).toString()
+            else -> s.format.name
         }
-        recTime.setTextColor(if (recording) ACCENT else TEXT)
+        recTime.setTextColor(if (busy) Ui.ACCENT else Ui.TEXT)
+        recTime.alpha = if (paused) 0.5f else 1f
         settingsBox.alpha = if (st == RecorderService.State.IDLE) 1f else 0.35f
         val name = RecorderService.lastName
-        lastCard.visibility = if (name != null) View.VISIBLE else View.GONE
+        lastRow.visibility = if (name != null) View.VISIBLE else View.GONE
         if (name != null) lastText.text = name
     }
 
     private fun refreshSettings() {
-        val mp3 = s.format == OutFormat.MP3
+        val video = s.format.isVideo
+        val src = s.effectiveAudio
         segFormat.select(s.format.ordinal)
-        segAudio.select(s.effectiveAudio.ordinal)
-        segAudio.setOptionEnabled(AudioSrc.NONE.ordinal, !mp3)
+        segKbps.select(kbpsList.indexOf(s.audioKbps).coerceAtLeast(0))
+        segKbps.show(!video)
+        segAudio.select(src.ordinal)
+        segAudio.setOptionEnabled(AudioSrc.NONE.ordinal, video)
+        sliderMic.set(s.micGain)
+        sliderMic.show(src.usesMic)
+        sliderInt.set(s.internalGain)
+        sliderInt.show(src.usesInternal)
+        segNs.select(if (s.noiseSuppress) 0 else 1)
+        segNs.show(src.usesMic)
+
         segVoice.select(s.voice.ordinal)
-        segVoice.setEnabled(s.effectiveAudio.usesMic)
-        segRes.select(listOf(1080, 720, 480).indexOf(s.shortSide).coerceAtLeast(0))
+        segVoice.setEnabled(src.usesMic)
+        val pitched = s.voice == Voice.HIGH || s.voice == Voice.LOW
+        sliderPitch.set(if (s.voice == Voice.LOW) s.pitchDown else s.pitchUp)
+        sliderPitch.show(pitched && src.usesMic)
+        previewBtn.visibility = if (src.usesMic) View.VISIBLE else View.GONE
+
+        videoCard.visibility = if (video) View.VISIBLE else View.GONE
+        segOrient.select(s.orientation)
+        segRes.select(resList.indexOf(s.shortSide).coerceAtLeast(0))
         segFps.select(if (s.fps == 60) 1 else 0)
         segQuality.select(s.quality)
-        segMp3.select(listOf(96, 128, 192).indexOf(s.mp3Kbps).coerceAtLeast(0))
+
+        segCountdown.select(countdownList.indexOf(s.countdown).coerceAtLeast(0))
+        segCountdown.show(video)
+        segOverlay.select(if (s.overlay) 0 else 1)
+        segOverlay.setHint(
+            when {
+                s.overlay && !SysSettings.canDrawOverlays(this) -> t(R.string.overlay_permission)
+                s.overlay -> t(R.string.hint_overlay)
+                else -> null
+            },
+            warn = s.overlay && !SysSettings.canDrawOverlays(this),
+        )
         segHide.select(if (s.hideOnStart) 0 else 1)
-        videoGroup.visibility = if (mp3) View.GONE else View.VISIBLE
-        segMp3.root.visibility = if (mp3) View.VISIBLE else View.GONE
+        segHide.show(video)
+        segLimitTime.select(limitTimeList.indexOf(s.limitMin).coerceAtLeast(0))
+        segLimitSize.select(limitSizeList.indexOf(s.limitMb).coerceAtLeast(0))
         refreshState()
     }
 
     private fun canEdit(): Boolean {
         if (RecorderService.state == RecorderService.State.IDLE) return true
-        Toast.makeText(this, "録画中は設定を変えられません", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, R.string.toast_locked, Toast.LENGTH_SHORT).show()
         return false
+    }
+
+    /** 設定を変えて画面に反映する */
+    private fun edit(block: () -> Unit) {
+        block()
+        refreshSettings()
     }
 
     // ---------- 画面の組み立て ----------
 
     private fun buildUi(): View {
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dpi(20), dpi(28), dpi(20), dpi(32))
-        }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         col.addView(TextView(this).apply {
-            text = "LiteRecorder"
+            text = t(R.string.app_name)
             textSize = 26f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(TEXT)
+            setTextColor(Ui.TEXT)
         })
         col.addView(TextView(this).apply {
-            text = "超軽量 録画・録音（MP4 / MP3）"
+            text = t(R.string.tagline)
             textSize = 13f
-            setTextColor(SUB)
+            setTextColor(Ui.SUB)
         })
 
-        // 録画ボタン
-        recDot = View(this).apply {
-            background = GradientDrawable().apply { setColor(ACCENT); cornerRadius = dp(40f) }
-        }
-        recButton = FrameLayout(this).apply {
+        // 録画ボタン（右に一時停止ボタン。左は同じ幅の空きで中央をそろえる）
+        recDot = View(this).apply { background = Ui.rounded(Ui.ACCENT, dp(40f)) }
+        val recButton = FrameLayout(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.TRANSPARENT)
-                setStroke(dpi(4), TEXT)
+                setStroke(dpi(4), Ui.TEXT)
             }
             addView(recDot, FrameLayout.LayoutParams(dpi(80), dpi(80), Gravity.CENTER))
             isClickable = true
-            contentDescription = "録画ボタン"
+            contentDescription = t(R.string.tile_label)
             setOnClickListener { onRecordClick() }
         }
-        col.addView(recButton, LinearLayout.LayoutParams(dpi(120), dpi(120)).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            topMargin = dpi(28)
-        })
+        pauseIcon = IconView(this, IconView.Kind.PAUSE)
+        pauseBtn = FrameLayout(this).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Ui.SEG_BG) }
+            addView(pauseIcon, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            isClickable = true
+            visibility = View.INVISIBLE
+            setOnClickListener { RecorderService.togglePause(this@MainActivity) }
+        }
+        val recRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            addView(View(context), LinearLayout.LayoutParams(dpi(56), dpi(56)).apply { rightMargin = dpi(24) })
+            addView(recButton, LinearLayout.LayoutParams(dpi(120), dpi(120)))
+            addView(pauseBtn, LinearLayout.LayoutParams(dpi(56), dpi(56)).apply { leftMargin = dpi(24) })
+        }
+        col.addView(recRow, Ui.matchWrap(dpi(28)))
         recTime = TextView(this).apply {
             textSize = 22f
             typeface = Typeface.MONOSPACE
             gravity = Gravity.CENTER
         }
-        col.addView(recTime, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dpi(12) })
+        col.addView(recTime, Ui.matchWrap(dpi(12)))
         recLabel = TextView(this).apply {
             textSize = 13f
-            setTextColor(SUB)
+            setTextColor(Ui.SUB)
             gravity = Gravity.CENTER
         }
-        col.addView(recLabel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        col.addView(recLabel, Ui.matchWrap())
 
-        // 最後に保存したファイル
-        lastText = TextView(this).apply { setTextColor(TEXT); textSize = 14f }
-        lastCard = card().apply {
+        // 録画一覧
+        val libCard = Ui.card(this).apply { setPadding(dpi(16), dpi(12), dpi(16), dpi(12)) }
+        lastText = TextView(this).apply { setTextColor(Ui.TEXT); textSize = 14f }
+        lastRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dpi(10))
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(TextView(context).apply { text = "最後に保存"; textSize = 11f; setTextColor(SUB) })
+                addView(TextView(context).apply { text = t(R.string.library_last); textSize = 11f; setTextColor(Ui.SUB) })
                 addView(lastText)
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(TextView(context).apply {
-                text = "開く"
-                setTextColor(ACCENT)
+                text = t(R.string.open)
+                setTextColor(Ui.ACCENT)
                 setTypeface(typeface, Typeface.BOLD)
                 setPadding(dpi(12), dpi(8), dpi(4), dpi(8))
                 setOnClickListener { openLast() }
             })
         }
-        col.addView(lastCard, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dpi(20) })
+        libCard.addView(lastRow)
+        libCard.addView(TextView(this).apply {
+            text = t(R.string.library_open_all)
+            textSize = 15f
+            setTextColor(Ui.TEXT)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dpi(4), 0, dpi(4))
+            setOnClickListener { startActivity(Intent(this@MainActivity, LibraryActivity::class.java)) }
+        }, Ui.matchWrap())
+        col.addView(libCard, Ui.matchWrap(dpi(20)))
 
         // 設定
         settingsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(settingsBox, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dpi(12) })
+        col.addView(settingsBox, Ui.matchWrap())
+        val ce = { canEdit() }
 
-        val main = card()
-        segFormat = Seg("出力形式", listOf("MP4（画面＋音）", "MP3（音だけ）")) {
-            s.format = OutFormat.entries[it]
+        // 出力
+        val out = Ui.card(this)
+        out.addView(Ui.sectionTitle(this, t(R.string.sec_output)))
+        segFormat = Seg(this, t(R.string.set_format), listOf("MP4", "MP3", "M4A"), ce) {
+            edit { s.format = OutFormat.entries[it] }
         }
-        segAudio = Seg("録る音", listOf("なし", "マイク", "内部音", "両方")) {
-            s.audio = AudioSrc.entries[it]
+        segFormat.setHint(t(R.string.hint_format))
+        segKbps = Seg(this, t(R.string.set_audio_quality), kbpsList.map { "${it}kbps" }, ce) {
+            edit { s.audioKbps = kbpsList[it] }
         }
-        segVoice = Seg("ボイスチェンジャー（マイクだけにかかる）", listOf("オフ", "高い声", "低い声", "ロボ", "エコー")) {
-            s.voice = Voice.entries[it]
-        }
-        main.addView(segFormat.root)
-        main.addView(segAudio.root)
-        main.addView(segVoice.root)
-        settingsBox.addView(main, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dpi(12) })
+        out.addView(segFormat.root)
+        out.addView(segKbps.root)
+        settingsBox.addView(out, Ui.matchWrap(dpi(12)))
 
-        videoGroup = card()
-        segRes = Seg("解像度（短い辺）", listOf("1080p", "720p", "480p")) {
-            s.shortSide = listOf(1080, 720, 480)[it]
+        // 音
+        val sound = Ui.card(this)
+        sound.addView(Ui.sectionTitle(this, t(R.string.sec_sound)))
+        segAudio = Seg(
+            this, t(R.string.set_source),
+            listOf(t(R.string.src_none), t(R.string.src_mic), t(R.string.src_internal), t(R.string.src_both)), ce,
+        ) { edit { s.audio = AudioSrc.entries[it] } }
+        sliderMic = Slider(this, { t(R.string.set_mic_vol) + "  $it%" }, 0, 200, ce) { s.micGain = it }
+        sliderInt = Slider(this, { t(R.string.set_int_vol) + "  $it%" }, 0, 200, ce) { s.internalGain = it }
+        segNs = Seg(this, t(R.string.set_ns), listOf(t(R.string.on), t(R.string.off)), ce) {
+            edit { s.noiseSuppress = it == 0 }
         }
-        segFps = Seg("フレームレート", listOf("30fps", "60fps")) { s.fps = if (it == 1) 60 else 30 }
-        segQuality = Seg("画質（ファイルの大きさ）", listOf("低・小さい", "中", "高・大きい")) { s.quality = it }
-        segHide = Seg("開始時にアプリを閉じる", listOf("閉じる", "閉じない")) { s.hideOnStart = it == 0 }
-        videoGroup.addView(segRes.root)
-        videoGroup.addView(segFps.root)
-        videoGroup.addView(segQuality.root)
-        videoGroup.addView(segHide.root)
-        settingsBox.addView(videoGroup, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dpi(12) })
+        sound.addView(segAudio.root)
+        sound.addView(sliderMic.root)
+        sound.addView(sliderInt.root)
+        sound.addView(segNs.root)
+        settingsBox.addView(sound, Ui.matchWrap(dpi(12)))
 
-        val mp3Card = card()
-        segMp3 = Seg("MP3 の音質", listOf("96kbps", "128kbps", "192kbps")) {
-            s.mp3Kbps = listOf(96, 128, 192)[it]
+        // ボイスチェンジャー
+        val voice = Ui.card(this)
+        voice.addView(Ui.sectionTitle(this, t(R.string.sec_voice)))
+        segVoice = Seg(
+            this, t(R.string.set_voice),
+            listOf(t(R.string.voice_off), t(R.string.voice_high), t(R.string.voice_low), t(R.string.voice_robot), t(R.string.voice_echo)),
+            ce,
+        ) { edit { s.voice = Voice.entries[it] } }
+        sliderPitch = Slider(this, {
+            t(R.string.set_pitch, if (s.voice == Voice.LOW) "−$it" else "+$it")
+        }, 1, 12, ce) {
+            if (s.voice == Voice.LOW) s.pitchDown = it else s.pitchUp = it
         }
-        mp3Card.addView(segMp3.root)
-        settingsBox.addView(mp3Card, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dpi(12) })
+        previewBtn = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setPadding(0, dpi(11), 0, dpi(11))
+            setOnClickListener { togglePreview() }
+        }
+        voice.addView(segVoice.root)
+        voice.addView(sliderPitch.root)
+        voice.addView(previewBtn, Ui.matchWrap(dpi(14)))
+        refreshPreviewButton()
+        settingsBox.addView(voice, Ui.matchWrap(dpi(12)))
+
+        // 映像
+        videoCard = Ui.card(this)
+        videoCard.addView(Ui.sectionTitle(this, t(R.string.sec_video)))
+        segOrient = Seg(
+            this, t(R.string.set_orientation),
+            listOf(t(R.string.orient_auto), t(R.string.orient_portrait), t(R.string.orient_landscape)), ce,
+        ) { edit { s.orientation = it } }
+        segOrient.setHint(t(R.string.hint_orientation))
+        segRes = Seg(this, t(R.string.set_resolution), resList.map { "${it}p" }, ce) { edit { s.shortSide = resList[it] } }
+        segFps = Seg(this, t(R.string.set_fps), listOf("30fps", "60fps"), ce) { edit { s.fps = if (it == 1) 60 else 30 } }
+        segQuality = Seg(this, t(R.string.set_quality), listOf(t(R.string.q_low), t(R.string.q_mid), t(R.string.q_high)), ce) {
+            edit { s.quality = it }
+        }
+        videoCard.addView(segOrient.root)
+        videoCard.addView(segRes.root)
+        videoCard.addView(segFps.root)
+        videoCard.addView(segQuality.root)
+        settingsBox.addView(videoCard, Ui.matchWrap(dpi(12)))
+
+        // 録画の操作
+        val ctl = Ui.card(this)
+        ctl.addView(Ui.sectionTitle(this, t(R.string.sec_control)))
+        segCountdown = Seg(
+            this, t(R.string.set_countdown),
+            countdownList.map { if (it == 0) t(R.string.none) else t(R.string.cd_sec, it) }, ce,
+        ) { edit { s.countdown = countdownList[it] } }
+        segOverlay = Seg(this, t(R.string.set_overlay), listOf(t(R.string.show), t(R.string.hide)), ce) {
+            edit { s.overlay = it == 0 }
+            if (it == 0 && !SysSettings.canDrawOverlays(this)) {
+                // 「他のアプリの上に表示」の設定画面を開く（戻ったら onResume で表示を更新）
+                runCatching {
+                    startActivity(Intent(SysSettings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                }
+            }
+        }
+        segHide = Seg(this, t(R.string.set_hide), listOf(t(R.string.close), t(R.string.keep_open)), ce) {
+            edit { s.hideOnStart = it == 0 }
+        }
+        segLimitTime = Seg(
+            this, t(R.string.set_limit_time),
+            limitTimeList.map {
+                when (it) {
+                    0 -> t(R.string.none)
+                    60 -> t(R.string.hour_1)
+                    else -> t(R.string.min_fmt, it)
+                }
+            },
+            ce,
+        ) { edit { s.limitMin = limitTimeList[it] } }
+        segLimitSize = Seg(
+            this, t(R.string.set_limit_size),
+            limitSizeList.map { if (it == 0) t(R.string.none) else if (it >= 1000) "${it / 1000}GB" else "${it}MB" }, ce,
+        ) { edit { s.limitMb = limitSizeList[it] } }
+        ctl.addView(segCountdown.root)
+        ctl.addView(segOverlay.root)
+        ctl.addView(segHide.root)
+        ctl.addView(segLimitTime.root)
+        ctl.addView(segLimitSize.root)
+        settingsBox.addView(ctl, Ui.matchWrap(dpi(12)))
 
         col.addView(TextView(this).apply {
-            text = "保存先: 動画 → Movies/LiteRecorder　音声 → Music/LiteRecorder\n" +
-                "内部音は、アプリ側が録音を禁止している音（一部のアプリや通話）は入りません。"
+            text = t(R.string.footer_note)
             textSize = 11f
-            setTextColor(SUB)
+            setTextColor(Ui.SUB)
             setLineSpacing(0f, 1.3f)
-        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dpi(16) })
+        }, Ui.matchWrap(dpi(16)))
 
         return ScrollView(this).apply {
             isFillViewport = true
@@ -312,93 +550,8 @@ class MainActivity : Activity() {
 
     private fun openLast() {
         val u = RecorderService.lastUri ?: return
-        val type = if (RecorderService.lastIsVideo) "video/mp4" else "audio/mpeg"
         runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(u, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-        }.onFailure { Toast.makeText(this, "開けるアプリがありません", Toast.LENGTH_SHORT).show() }
-    }
-
-    private fun card() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        background = GradientDrawable().apply { setColor(CARD); cornerRadius = dp(16f) }
-        setPadding(dpi(16), dpi(6), dpi(16), dpi(14))
-    }
-
-    /** セグメント式の選択ボタン列 */
-    private inner class Seg(title: String, labels: List<String>, private val onSelect: (Int) -> Unit) {
-        val root = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
-        private val items = ArrayList<TextView>()
-        private val optEnabled = BooleanArray(labels.size) { true }
-        private var enabled = true
-        private var selected = 0
-
-        init {
-            root.addView(TextView(this@MainActivity).apply {
-                text = title
-                textSize = 12f
-                setTextColor(SUB)
-                setPadding(0, dpi(10), 0, dpi(6))
-            })
-            val row = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                background = GradientDrawable().apply { setColor(SEG_BG); cornerRadius = dp(10f) }
-                setPadding(dpi(3), dpi(3), dpi(3), dpi(3))
-            }
-            labels.forEachIndexed { i, label ->
-                val tv = TextView(this@MainActivity).apply {
-                    text = label
-                    textSize = 13f
-                    gravity = Gravity.CENTER
-                    maxLines = 1
-                    setPadding(dpi(4), dpi(9), dpi(4), dpi(9))
-                    setOnClickListener {
-                        if (!enabled || !optEnabled[i] || !canEdit()) return@setOnClickListener
-                        onSelect(i)
-                        refreshSettings()
-                    }
-                }
-                items += tv
-                row.addView(tv, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            }
-            root.addView(row)
-        }
-
-        fun select(i: Int) {
-            selected = i
-            render()
-        }
-
-        fun setEnabled(b: Boolean) {
-            enabled = b
-            root.alpha = if (b) 1f else 0.35f
-        }
-
-        fun setOptionEnabled(i: Int, b: Boolean) {
-            optEnabled[i] = b
-            render()
-        }
-
-        private fun render() {
-            items.forEachIndexed { i, tv ->
-                val on = i == selected
-                tv.background = if (on) GradientDrawable().apply { setColor(ACCENT); cornerRadius = dp(8f) } else null
-                tv.setTextColor(if (on) Color.WHITE else TEXT)
-                tv.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
-                tv.alpha = if (optEnabled[i]) 1f else 0.3f
-            }
-        }
-    }
-
-    private fun dp(v: Float) = v * resources.displayMetrics.density
-    private fun dpi(v: Int) = (v * resources.displayMetrics.density).toInt()
-
-    companion object {
-        private const val REQ_PERM = 1
-        private const val REQ_CAPTURE = 2
-        private val ACCENT = Color.parseColor("#FF3B30")
-        private val TEXT = Color.parseColor("#F2F2F5")
-        private val SUB = Color.parseColor("#8E8E99")
-        private val CARD = Color.parseColor("#1A1A20")
-        private val SEG_BG = Color.parseColor("#26262E")
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(u, RecorderService.lastMime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        }.onFailure { Toast.makeText(this, R.string.toast_no_app, Toast.LENGTH_SHORT).show() }
     }
 }

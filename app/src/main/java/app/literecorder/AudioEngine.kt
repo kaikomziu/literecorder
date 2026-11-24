@@ -1,11 +1,13 @@
 package app.literecorder
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.NoiseSuppressor
 import android.media.projection.MediaProjection
 
 /**
@@ -14,19 +16,25 @@ import android.media.projection.MediaProjection
  * 内部音は何も再生していないと届かない端末もあるので、各ソースは別スレッドで FIFO に貯め、
  * ミキサーは時計（System.nanoTime）で一定間隔に取り出す。足りない分は無音で埋める。
  * ボイスチェンジャーはマイクの FIFO に入れる前にだけかける。
+ * 一時停止中は取り出したデータを捨て、時刻はサンプル数から作るので映像と自然にそろう。
  */
 class AudioEngine(
-    private val src: AudioSrc,
-    voice: Voice,
+    private val ctx: Context,
+    private val s: Settings,
     private val projection: MediaProjection?,
     private val sessionBaseNs: Long,
+    private val clock: PauseClock,
     /** pcm（インターリーブ 16bit）, short の個数, 録画開始からの µs */
     private val sink: (ShortArray, Int, Long) -> Unit,
 ) {
+    private val src = s.effectiveAudio
     val channels = if (src == AudioSrc.MIC) 1 else 2
 
     @Volatile private var running = false
-    private val fx = if (voice != Voice.OFF) VoiceChanger(voice, RATE) else null
+    private val fx = if (s.voice != Voice.OFF) VoiceChanger(s.voice, RATE, s.semitones) else null
+    private val micGain = s.micGain / 100f
+    private val intGain = s.internalGain / 100f
+    private var ns: NoiseSuppressor? = null
     private var mic: AudioRecord? = null
     private var internal: AudioRecord? = null
     private val micFifo = Fifo(RATE / 3, 1)         // 約 0.33 秒ぶん（モノラル）
@@ -42,10 +50,14 @@ class AudioEngine(
                 .setAudioFormat(fmt(AudioFormat.CHANNEL_IN_MONO))
                 .setBufferSizeInBytes(bufSize(AudioFormat.CHANNEL_IN_MONO))
                 .build()
-            check(mic!!.state == AudioRecord.STATE_INITIALIZED) { "マイクを開けませんでした" }
+            check(mic!!.state == AudioRecord.STATE_INITIALIZED) { ctx.getString(R.string.err_mic) }
+            // ノイズ除去は端末が対応しているときだけ（Android 標準のエフェクトなので軽い）
+            if (s.noiseSuppress && NoiseSuppressor.isAvailable()) {
+                ns = runCatching { NoiseSuppressor.create(mic!!.audioSessionId)?.apply { enabled = true } }.getOrNull()
+            }
         }
         if (src.usesInternal) {
-            val proj = checkNotNull(projection) { "内部音には画面キャプチャの許可が必要です" }
+            val proj = checkNotNull(projection) { ctx.getString(R.string.err_projection) }
             val cfg = AudioPlaybackCaptureConfiguration.Builder(proj)
                 .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
                 .addMatchingUsage(AudioAttributes.USAGE_GAME)
@@ -56,7 +68,7 @@ class AudioEngine(
                 .setAudioFormat(fmt(AudioFormat.CHANNEL_IN_STEREO))
                 .setBufferSizeInBytes(bufSize(AudioFormat.CHANNEL_IN_STEREO))
                 .build()
-            check(internal!!.state == AudioRecord.STATE_INITIALIZED) { "内部音を開けませんでした" }
+            check(internal!!.state == AudioRecord.STATE_INITIALIZED) { ctx.getString(R.string.err_internal) }
         }
 
         running = true
@@ -87,7 +99,8 @@ class AudioEngine(
         val captureStartNs = System.nanoTime()
         // 読み取りスレッドが少し貯めるのを待ってから取り出す（途切れ防止）
         val t0 = captureStartNs + PREBUFFER_NS
-        var k = 0L
+        var k = 0L        // 時計上のチャンク番号
+        var emitted = 0L  // 実際に書き出したチャンク数（一時停止中は進まない）
         while (running) {
             val target = t0 + k * chunkNs
             val wait = target - System.nanoTime()
@@ -102,22 +115,24 @@ class AudioEngine(
                 val got = intFifo.pull(intBuf, CHUNK * 2)
                 intBuf.fill(0, got, CHUNK * 2)
             }
+            k++
+            if (clock.paused) continue
             when (src) {
-                AudioSrc.MIC -> micBuf.copyInto(out)
-                AudioSrc.INTERNAL -> intBuf.copyInto(out)
+                AudioSrc.MIC -> for (i in 0 until CHUNK) out[i] = clip(micBuf[i] * micGain)
+                AudioSrc.INTERNAL -> for (i in 0 until CHUNK * 2) out[i] = clip(intBuf[i] * intGain)
                 else -> for (i in 0 until CHUNK) {
-                    val m = micBuf[i].toInt()
-                    out[2 * i] = clip(intBuf[2 * i] + m)
-                    out[2 * i + 1] = clip(intBuf[2 * i + 1] + m)
+                    val m = micBuf[i] * micGain
+                    out[2 * i] = clip(intBuf[2 * i] * intGain + m)
+                    out[2 * i + 1] = clip(intBuf[2 * i + 1] * intGain + m)
                 }
             }
-            val ptsUs = (captureStartNs - sessionBaseNs) / 1000 + k * CHUNK * 1_000_000L / RATE
+            val ptsUs = (captureStartNs - sessionBaseNs) / 1000 + emitted * CHUNK * 1_000_000L / RATE
             try {
                 sink(out, out.size, ptsUs)
             } catch (_: Exception) {
                 break
             }
-            k++
+            emitted++
         }
     }
 
@@ -127,6 +142,7 @@ class AudioEngine(
         runCatching { mic?.stop() }
         runCatching { internal?.stop() }
         threads.forEach { it.join(2000) }
+        runCatching { ns?.release() }
         runCatching { mic?.release() }
         runCatching { internal?.release() }
     }
@@ -173,6 +189,6 @@ class AudioEngine(
         private fun bufSize(mask: Int) =
             maxOf(AudioRecord.getMinBufferSize(RATE, mask, AudioFormat.ENCODING_PCM_16BIT) * 2, 16384)
 
-        private fun clip(v: Int) = v.coerceIn(-32768, 32767).toShort()
+        private fun clip(v: Float) = v.toInt().coerceIn(-32768, 32767).toShort()
     }
 }
