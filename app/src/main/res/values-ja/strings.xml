@@ -97,4 +97,15 @@
     <string name="err_projection">画面キャプチャの許可がありません</string>
     <string name="err_storage">保存先を作れませんでした</string>
     <string name="err_notification">通知を出せませんでした</string>
+    <string name="err_low_space">空き容量が足りません</string>
+    <string name="toast_low_space">空き容量が少なくなったので停止しました</string>
+    <string name="toast_saved_parts">%1$d 個のファイルに分けて保存しました</string>
+    <string name="set_split">分割保存</string>
+    <string name="split_off">しない</string>
+    <string name="split_every">%1$d分ごと</string>
+    <string name="hint_split">長時間でも安心。途中でアプリが終了しても、失うのは最後の1ファイルだけです</string>
+    <string name="sc_video_short">画面を録画</string>
+    <string name="sc_video_long">画面録画を開始</string>
+    <string name="sc_audio_short">音だけ録音</string>
+    <string name="sc_audio_long">音声録音を開始</string>
 </resources>

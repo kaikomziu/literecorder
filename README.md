@@ -1,6 +1,6 @@
 # LiteRecorder
 
-Kotlin 製の超軽量な Android 録画・録音アプリ（APK 約 260KB、AndroidX なし、インターネット権限なし）。
+Kotlin 製の超軽量な Android 録画・録音アプリ（APK 約 270KB、AndroidX なし、インターネット権限なし）。
 
 - サイト: https://kaikomziu.github.io/literecorder/
 - ダウンロード: [最新版の APK](https://github.com/kaikomziu/literecorder/releases/latest/download/LiteRecorder.apk)（[すべてのバージョン](https://github.com/kaikomziu/literecorder/releases)）
@@ -14,7 +14,10 @@ Kotlin 製の超軽量な Android 録画・録音アプリ（APK 約 260KB、And
 - 画面に浮かぶ操作ボタン（「他のアプリの上に表示」の許可が要る）
 - 録画前のカウントダウン（なし / 3秒 / 5秒）
 - クイック設定タイルから録画開始・停止
-- 自動停止（時間 5分〜1時間 / サイズ 100MB〜1GB）
+- 自動停止（時間 5分〜1時間 / サイズ 100MB〜1GB）、空き容量が少なくなったら自動で停止
+- 分割保存（5 / 10 / 30 分ごと）。強制終了しても失うのは最後の1ファイルだけ。書きかけの MP3 は次回起動時に救出、MP4 / M4A は削除
+- レベルメーター（アプリと浮かぶボタン）
+- アイコン長押しのショートカット（画面を録画 / 音だけ録音）
 - 録画一覧（再生・共有・削除）
 - 日本語 / English（Android 13 以降はアプリごとの言語設定にも対応）
 
@@ -47,6 +50,7 @@ MP3 エンコードに [jump3r](https://github.com/Sciss/jump3r)（LGPL）を使
 | `Session.kt` | 1 回分の録画/録音と MediaStore への保存 |
 | `AudioEngine.kt` | マイク・内部音の取り込みとミックス |
 | `VoiceChanger.kt` | ボイスチェンジャー |
+| `Output.kt` | MediaStore への保存、分割保存、書きかけファイルの後始末 |
 | `Encoders.kt` | H.264 / AAC / MP3 エンコーダ、MP4 マルチプレクサ、一時停止の時計 |
 | `Overlay.kt` | 画面に浮かぶ操作ボタンとカウントダウン |
 | `RecordTileService.kt` | クイック設定タイル |

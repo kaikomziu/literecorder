@@ -47,6 +47,10 @@ class RecorderService : Service() {
             private set
 
         val paused get() = current?.clock?.paused == true
+        /** 今の音の大きさ（0〜1、音なしは -1） */
+        val level get() = current?.level ?: -1f
+        /** 空き容量がこれを下回ったら録画を止める */
+        private const val LOW_SPACE = 150L * 1_000_000
         /** 止まっていた時間を除いた経過（ms） */
         fun activeMs() = current?.activeMs() ?: 0L
 
@@ -73,21 +77,25 @@ class RecorderService : Service() {
     private var settings: Settings? = null
     private var overlay: Overlay? = null
     private var limitHit = false
+    private var lowSpace = false
+    private var tickCount = 0
 
     private val ticker = object : Runnable {
         override fun run() {
             val sess = current ?: return
             val s = settings ?: return
-            overlay?.update(sess.clock.paused, sess.activeMs())
+            overlay?.update(sess.clock.paused, sess.activeMs(), sess.level)
             // 自動停止（時間・サイズ）
             val overTime = s.limitMin > 0 && sess.activeMs() >= s.limitMin * 60_000L
             val overSize = s.limitMb > 0 && sess.bytes >= s.limitMb * 1_000_000L
-            if (overTime || overSize) {
-                limitHit = true
+            // 空き容量（2 秒ごと）
+            if (++tickCount % 10 == 0 && Store.freeBytes() < LOW_SPACE) lowSpace = true
+            if (overTime || overSize || lowSpace) {
+                limitHit = overTime || overSize
                 finish()
                 return
             }
-            main.postDelayed(this, 500)
+            main.postDelayed(this, 200)
         }
     }
 
@@ -114,6 +122,8 @@ class RecorderService : Service() {
         val s = Settings(this)
         settings = s
         val src = s.effectiveAudio
+        limitHit = false
+        lowSpace = false
         val data = getParcelableExtraCompat(intent)
         val code = intent.getIntExtra(EXTRA_CODE, Activity.RESULT_CANCELED)
 
@@ -129,6 +139,7 @@ class RecorderService : Service() {
         }
 
         try {
+            check(Store.freeBytes() >= LOW_SPACE * 2) { getString(R.string.err_low_space) }
             if (s.needsProjection) {
                 checkNotNull(data) { getString(R.string.err_projection) }
                 val mpm = getSystemService(MediaProjectionManager::class.java)
@@ -200,12 +211,6 @@ class RecorderService : Service() {
             return
         }
         state = State.RECORDING
-        limitHit = false
-        lastMime = when (s.format) {
-            OutFormat.MP4 -> "video/mp4"
-            OutFormat.MP3 -> "audio/mpeg"
-            OutFormat.M4A -> "audio/mp4"
-        }
         overlay?.showControls()
         updateNotification()
         main.post(ticker)
@@ -216,7 +221,7 @@ class RecorderService : Service() {
         val sess = current ?: return
         if (state != State.RECORDING) return
         if (sess.clock.paused) sess.clock.resume() else sess.clock.pause()
-        overlay?.update(sess.clock.paused, sess.activeMs())
+        overlay?.update(sess.clock.paused, sess.activeMs(), sess.level)
         updateNotification()
         changed()
     }
@@ -247,15 +252,22 @@ class RecorderService : Service() {
         val proj = projection
         projection = null
         Thread {
-            val ok = sess?.stop() ?: false
+            val saved = sess?.stop() ?: emptyList()
             runCatching { proj?.stop() }
             main.post {
                 current = null
-                if (ok && sess != null) {
-                    lastUri = sess.uri
-                    lastName = sess.fileName
-                    val msg = if (limitHit) getString(R.string.toast_limit) else getString(R.string.toast_saved, sess.fileName)
-                    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+                val last = saved.lastOrNull()
+                if (last != null) {
+                    lastUri = last.uri
+                    lastName = last.name
+                    lastMime = last.mime
+                    val msg = when {
+                        lowSpace -> getString(R.string.toast_low_space)
+                        limitHit -> getString(R.string.toast_limit)
+                        saved.size > 1 -> getString(R.string.toast_saved_parts, saved.size)
+                        else -> getString(R.string.toast_saved, last.name)
+                    }
+                    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
                 } else {
                     Toast.makeText(this, R.string.toast_save_failed, Toast.LENGTH_LONG).show()
                 }

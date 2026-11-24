@@ -99,4 +99,15 @@
     <string name="err_projection">Screen capture permission is missing</string>
     <string name="err_storage">Couldn\'t create the file</string>
     <string name="err_notification">Couldn\'t show the notification</string>
+    <string name="err_low_space">Not enough free storage</string>
+    <string name="toast_low_space">Stopped because storage is almost full</string>
+    <string name="toast_saved_parts">Saved as %1$d files</string>
+    <string name="set_split">Split into files</string>
+    <string name="split_off">Off</string>
+    <string name="split_every">%1$d min</string>
+    <string name="hint_split">Long recordings are kept safe: if the app is killed, only the last part is lost</string>
+    <string name="sc_video_short">Record screen</string>
+    <string name="sc_video_long">Start screen recording</string>
+    <string name="sc_audio_short">Record audio</string>
+    <string name="sc_audio_long">Start audio recording</string>
 </resources>

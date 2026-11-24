@@ -53,6 +53,35 @@ class IconView(ctx: Context, var kind: Kind) : View(ctx) {
     }
 }
 
+/** 音の大きさの横棒（大きすぎると赤くなる） */
+class MeterView(ctx: Context) : View(ctx) {
+    private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x40FFFFFF }
+    private val fg = Paint(Paint.ANTI_ALIAS_FLAG)
+    var level = 0f
+        set(v) {
+            val c = v.coerceIn(0f, 1f)
+            if (c != field) {
+                field = c
+                invalidate()
+            }
+        }
+
+    override fun onDraw(c: Canvas) {
+        val h = height.toFloat()
+        val r = h / 2
+        c.drawRoundRect(RectF(0f, 0f, width.toFloat(), h), r, r, bg)
+        // 小さい音も見えるよう平方根で持ち上げる
+        val w = width * kotlin.math.sqrt(level)
+        if (w < 1f) return
+        fg.color = when {
+            level > 0.9f -> 0xFFFF3B30.toInt()
+            level > 0.5f -> 0xFFFFCC00.toInt()
+            else -> 0xFF34C759.toInt()
+        }
+        c.drawRoundRect(RectF(0f, 0f, w, h), r, r, fg)
+    }
+}
+
 /**
  * 他のアプリの上に出す小さな操作ボタン（一時停止 / 停止＋経過時間）と、開始前のカウントダウン。
  * 「他のアプリの上に表示」の許可がないときは何もしない。
@@ -64,6 +93,7 @@ class Overlay(private val ctx: Context, private val onPause: () -> Unit, private
     private var controlsParams: WindowManager.LayoutParams? = null
     private var pauseIcon: IconView? = null
     private var timeText: TextView? = null
+    private var meter: MeterView? = null
     private var countdown: TextView? = null
 
     val allowed get() = SysSettings.canDrawOverlays(ctx)
@@ -131,9 +161,15 @@ class Overlay(private val ctx: Context, private val onPause: () -> Unit, private
             setPadding(dp(8), 0, 0, 0)
             text = "00:00"
         }
+        val meterView = MeterView(ctx)
+        val timeCol = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(time)
+            addView(meterView, LinearLayout.LayoutParams(dp(52), dp(4)).apply { leftMargin = dp(8); topMargin = dp(3) })
+        }
         row.addView(pause, LinearLayout.LayoutParams(dp(40), dp(40)))
         row.addView(stop, LinearLayout.LayoutParams(dp(40), dp(40)).apply { leftMargin = dp(6) })
-        row.addView(time)
+        row.addView(timeCol)
         pill.addView(row)
         val p = params(true).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -151,9 +187,14 @@ class Overlay(private val ctx: Context, private val onPause: () -> Unit, private
         controlsParams = p
         pauseIcon = pause
         timeText = time
+        meter = meterView
     }
 
-    fun update(paused: Boolean, activeMs: Long) {
+    fun update(paused: Boolean, activeMs: Long, level: Float = -1f) {
+        meter?.let {
+            it.visibility = if (level < 0) View.GONE else View.VISIBLE
+            it.level = if (paused) 0f else level
+        }
         pauseIcon?.let {
             val k = if (paused) IconView.Kind.PLAY else IconView.Kind.PAUSE
             if (it.kind != k) {
@@ -173,6 +214,7 @@ class Overlay(private val ctx: Context, private val onPause: () -> Unit, private
         controls = null
         pauseIcon = null
         timeText = null
+        meter = null
     }
 
     /** 指を動かしたらドラッグ、動かさなければ中のボタンのクリックとして扱う */

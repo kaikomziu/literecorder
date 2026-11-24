@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- アイコン長押しで出るショートカット -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_sc_video"
+        android:shortcutId="record_video"
+        android:shortcutLongLabel="@string/sc_video_long"
+        android:shortcutShortLabel="@string/sc_video_short">
+        <intent
+            android:action="app.literecorder.QUICK_START"
+            android:targetClass="app.literecorder.MainActivity"
+            android:targetPackage="app.literecorder">
+            <extra android:name="mode" android:value="video" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_sc_audio"
+        android:shortcutId="record_audio"
+        android:shortcutLongLabel="@string/sc_audio_long"
+        android:shortcutShortLabel="@string/sc_audio_short">
+        <intent
+            android:action="app.literecorder.QUICK_START"
+            android:targetClass="app.literecorder.MainActivity"
+            android:targetPackage="app.literecorder">
+            <extra android:name="mode" android:value="audio" />
+        </intent>
+    </shortcut>
+</shortcuts>

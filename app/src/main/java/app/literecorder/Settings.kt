@@ -123,6 +123,11 @@ class Settings(ctx: Context) {
         get() = int("limit_mb", 0)
         set(v) = setInt("limit_mb", v)
 
+    /** 分割保存の間隔（分、0=分割しない） */
+    var splitMin: Int
+        get() = int("split_min", 0)
+        set(v) = setInt("split_min", v)
+
     /** 音だけの形式では「音なし」は不可。その場合はマイクにする */
     val effectiveAudio: AudioSrc
         get() = if (!format.isVideo && audio == AudioSrc.NONE) AudioSrc.MIC else audio

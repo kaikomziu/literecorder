@@ -31,6 +31,9 @@ class AudioEngine(
     val channels = if (src == AudioSrc.MIC) 1 else 2
 
     @Volatile private var running = false
+    /** 今の音の大きさ（0〜1、ピークをゆっくり下げる）。レベルメーター用 */
+    @Volatile var level = 0f
+        private set
     private val fx = if (s.voice != Voice.OFF) VoiceChanger(s.voice, RATE, s.semitones) else null
     private val micGain = s.micGain / 100f
     private val intGain = s.internalGain / 100f
@@ -126,6 +129,12 @@ class AudioEngine(
                     out[2 * i + 1] = clip(intBuf[2 * i + 1] * intGain + m)
                 }
             }
+            var peak = 0
+            for (i in 0 until out.size) {
+                val v = out[i].toInt()
+                if (v > peak) peak = v else if (-v > peak) peak = -v
+            }
+            level = maxOf(peak / 32768f, level * 0.85f)
             val ptsUs = (captureStartNs - sessionBaseNs) / 1000 + emitted * CHUNK * 1_000_000L / RATE
             try {
                 sink(out, out.size, ptsUs)

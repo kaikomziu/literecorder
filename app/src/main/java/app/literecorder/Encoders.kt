@@ -29,6 +29,16 @@ import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+/** エンコーダの出力先（分割保存では途中でファイルを切り替える） */
+interface MuxSink {
+    /** トラックを登録して番号を返す（video=true は映像） */
+    fun addTrack(format: MediaFormat, video: Boolean): Int
+    fun write(track: Int, buf: ByteBuffer, info: MediaCodec.BufferInfo)
+
+    /** 映像のキーフレームがすぐ欲しいか（分割の切り替え位置に使う） */
+    fun wantsKeyFrame(): Boolean = false
+}
+
 /**
  * MediaMuxer の薄いラッパー。
  * 全トラックがそろうまで start できないので、それまでのサンプルはメモリに貯めておく。
@@ -83,9 +93,13 @@ class Muxer(fd: FileDescriptor, private val expectedTracks: Int) {
 }
 
 /** 出力バッファを Muxer に流す共通処理（時刻を単調増加にそろえる） */
-private class TrackWriter(private val muxer: Muxer) {
+private class TrackWriter(private val sink: MuxSink, private val video: Boolean) {
     var track = -1
     private var lastPts = -1L
+
+    fun add(format: MediaFormat) {
+        track = sink.addTrack(format, video)
+    }
 
     fun write(buf: ByteBuffer, info: MediaCodec.BufferInfo, baseUs: Long, pausedUs: Long = 0) {
         if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0 || info.size <= 0 || track < 0) return
@@ -95,7 +109,7 @@ private class TrackWriter(private val muxer: Muxer) {
         info.presentationTimeUs = pts
         buf.position(info.offset)
         buf.limit(info.offset + info.size)
-        muxer.write(track, buf, info)
+        sink.write(track, buf, info)
     }
 }
 
@@ -105,11 +119,10 @@ private class TrackWriter(private val muxer: Muxer) {
  */
 class VideoEncoder(
     val width: Int, val height: Int, fps: Int, bitrate: Int,
-    muxer: Muxer, private val baseUs: Long, private val clock: PauseClock,
+    private val sink: MuxSink, private val baseUs: Long, private val clock: PauseClock,
 ) {
     private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-    private val writer = TrackWriter(muxer)
-    private val muxerRef = muxer
+    private val writer = TrackWriter(sink, true)
     val surface: Surface
     private val thread = Thread({ drainLoop() }, "lr-video")
 
@@ -135,6 +148,7 @@ class VideoEncoder(
         val info = MediaCodec.BufferInfo()
         var wasPaused = false
         var needKey = false
+        var lastKeyRequestNs = 0L
         try {
             while (true) {
                 val idx = codec.dequeueOutputBuffer(info, 10_000)
@@ -144,8 +158,13 @@ class VideoEncoder(
                     runCatching { codec.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) }
                 }
                 wasPaused = paused
+                // 分割の切り替え時刻になったらキーフレームを出してもらう（画面が止まっていると来ないため）
+                if (sink.wantsKeyFrame() && System.nanoTime() - lastKeyRequestNs > 500_000_000L) {
+                    lastKeyRequestNs = System.nanoTime()
+                    runCatching { codec.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) }
+                }
                 if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    writer.track = muxerRef.addTrack(codec.outputFormat)
+                    writer.add(codec.outputFormat)
                 } else if (idx >= 0) {
                     val isKey = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
                     if (paused) {
@@ -235,10 +254,10 @@ class PauseClock {
 /** AAC-LC エンコーダ（MP4 の音声トラック・M4A） */
 class AacEncoder(
     private val rate: Int, private val channels: Int, bitrate: Int,
-    private val muxer: Muxer,
+    sink: MuxSink,
 ) {
     private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-    private val writer = TrackWriter(muxer)
+    private val writer = TrackWriter(sink, false)
     private val info = MediaCodec.BufferInfo()
 
     init {
@@ -276,7 +295,7 @@ class AacEncoder(
         while (true) {
             val idx = codec.dequeueOutputBuffer(info, if (untilEos) 10_000 else 0)
             when {
-                idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> writer.track = muxer.addTrack(codec.outputFormat)
+                idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> writer.add(codec.outputFormat)
                 idx >= 0 -> {
                     codec.getOutputBuffer(idx)?.let { writer.write(it, info, 0) }
                     codec.releaseOutputBuffer(idx, false)
@@ -304,7 +323,7 @@ class AacEncoder(
  * MP3 エンコーダ（jump3r = LAME の Java 移植）。
  * jump3r の LameEncoder は Android に無い javax.sound を使うので、同じ配線を自前で組む。
  */
-class Mp3Encoder(private val channels: Int, rate: Int, kbps: Int, private val out: OutputStream) {
+class Mp3Encoder(private val channels: Int, rate: Int, kbps: Int, var out: OutputStream) {
     private val lame = Lame()
     private val gf: LameGlobalFlags
     private var left = IntArray(0)

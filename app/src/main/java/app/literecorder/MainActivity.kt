@@ -30,6 +30,8 @@ class MainActivity : Activity() {
 
     companion object {
         const val ACTION_QUICK_START = "app.literecorder.QUICK_START"
+        /** ショートカットから: "video"=画面録画 / "audio"=音だけ */
+        const val EXTRA_MODE = "mode"
         private const val REQ_PERM = 1
         private const val REQ_CAPTURE = 2
         private const val REQ_PERM_PREVIEW = 3
@@ -46,6 +48,7 @@ class MainActivity : Activity() {
     private lateinit var pauseIcon: IconView
     private lateinit var recLabel: TextView
     private lateinit var recTime: TextView
+    private lateinit var meter: MeterView
     private lateinit var lastRow: LinearLayout
     private lateinit var lastText: TextView
     private lateinit var settingsBox: LinearLayout
@@ -69,17 +72,19 @@ class MainActivity : Activity() {
     private lateinit var segHide: Seg
     private lateinit var segLimitTime: Seg
     private lateinit var segLimitSize: Seg
+    private lateinit var segSplit: Seg
 
     private val kbpsList = listOf(96, 128, 192)
     private val resList = listOf(1080, 720, 480)
     private val countdownList = listOf(0, 3, 5)
     private val limitTimeList = listOf(0, 5, 10, 30, 60)
     private val limitSizeList = listOf(0, 100, 500, 1000)
+    private val splitList = listOf(0, 5, 10, 30)
 
     private val tick = object : Runnable {
         override fun run() {
             refreshState()
-            if (RecorderService.state != RecorderService.State.IDLE) ui.postDelayed(this, 250)
+            if (RecorderService.state != RecorderService.State.IDLE) ui.postDelayed(this, 120)
         }
     }
 
@@ -88,6 +93,10 @@ class MainActivity : Activity() {
         s = Settings(this)
         setContentView(buildUi())
         refreshSettings()
+        // 前回強制終了したときの書きかけファイルを片付ける（録画中でなければ）
+        if (RecorderService.state == RecorderService.State.IDLE) {
+            Thread { runCatching { Store.cleanupPending(applicationContext) } }.start()
+        }
         handleIntent(intent)
     }
 
@@ -99,6 +108,13 @@ class MainActivity : Activity() {
     private fun handleIntent(i: Intent?) {
         if (i?.action != ACTION_QUICK_START) return
         i.action = null
+        // アイコン長押しのショートカット: 録画か録音かを切り替えてから始める
+        when (i.getStringExtra(EXTRA_MODE)) {
+            "video" -> s.format = OutFormat.MP4
+            "audio" -> if (s.format.isVideo) s.format = OutFormat.MP3
+        }
+        i.removeExtra(EXTRA_MODE)
+        refreshSettings()
         quickLaunch = true
         if (RecorderService.state == RecorderService.State.IDLE) onRecordClick()
     }
@@ -245,6 +261,9 @@ class MainActivity : Activity() {
             else -> s.format.name
         }
         recTime.setTextColor(if (busy) Ui.ACCENT else Ui.TEXT)
+        val lv = if (recording) RecorderService.level else -1f
+        meter.visibility = if (lv >= 0) View.VISIBLE else View.INVISIBLE
+        meter.level = if (paused) 0f else lv.coerceAtLeast(0f)
         recTime.alpha = if (paused) 0.5f else 1f
         settingsBox.alpha = if (st == RecorderService.State.IDLE) 1f else 0.35f
         val name = RecorderService.lastName
@@ -295,6 +314,7 @@ class MainActivity : Activity() {
         segHide.show(video)
         segLimitTime.select(limitTimeList.indexOf(s.limitMin).coerceAtLeast(0))
         segLimitSize.select(limitSizeList.indexOf(s.limitMb).coerceAtLeast(0))
+        segSplit.select(splitList.indexOf(s.splitMin).coerceAtLeast(0))
         refreshState()
     }
 
@@ -362,6 +382,12 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         }
         col.addView(recTime, Ui.matchWrap(dpi(12)))
+        meter = MeterView(this).apply { visibility = View.INVISIBLE }
+        col.addView(meter, LinearLayout.LayoutParams(dpi(140), dpi(6)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dpi(6)
+            bottomMargin = dpi(4)
+        })
         recLabel = TextView(this).apply {
             textSize = 13f
             setTextColor(Ui.SUB)
@@ -519,8 +545,14 @@ class MainActivity : Activity() {
         ctl.addView(segCountdown.root)
         ctl.addView(segOverlay.root)
         ctl.addView(segHide.root)
+        segSplit = Seg(
+            this, t(R.string.set_split),
+            splitList.map { if (it == 0) t(R.string.split_off) else t(R.string.split_every, it) }, ce,
+        ) { edit { s.splitMin = splitList[it] } }
+        segSplit.setHint(t(R.string.hint_split))
         ctl.addView(segLimitTime.root)
         ctl.addView(segLimitSize.root)
+        ctl.addView(segSplit.root)
         settingsBox.addView(ctl, Ui.matchWrap(dpi(12)))
 
         col.addView(TextView(this).apply {
