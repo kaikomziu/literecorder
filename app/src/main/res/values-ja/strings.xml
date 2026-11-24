@@ -108,4 +108,26 @@
     <string name="sc_video_long">画面録画を開始</string>
     <string name="sc_audio_short">音だけ録音</string>
     <string name="sc_audio_long">音声録音を開始</string>
+    <string name="voice_radio">ラジオ</string>
+    <string name="voice_phone">電話</string>
+    <string name="voice_alien">宇宙人</string>
+    <string name="set_monitor">録画中に自分の声を聞く（イヤホン）</string>
+    <string name="hint_monitor">イヤホンがつながっているときだけ鳴ります</string>
+    <string name="set_preset">おまかせ設定</string>
+    <string name="preset_sns">SNS向け</string>
+    <string name="preset_game">ゲーム</string>
+    <string name="preset_std">標準</string>
+    <string name="preset_small">省容量</string>
+    <string name="more">その他</string>
+    <string name="rename">名前を変更</string>
+    <string name="trim">トリミング</string>
+    <string name="extract_audio">音だけ取り出す</string>
+    <string name="trim_start">開始: %1$s</string>
+    <string name="trim_end">終了: %1$s</string>
+    <string name="trim_hint_video">動画はキーフレームの位置からしか始められないので、開始が2秒ほど前にずれることがあります</string>
+    <string name="save">保存</string>
+    <string name="working">保存中…</string>
+    <string name="no_audio_track">この動画には音が入っていません</string>
+    <string name="rename_failed">名前を変えられませんでした</string>
+    <string name="edit_failed">保存できませんでした</string>
 </resources>

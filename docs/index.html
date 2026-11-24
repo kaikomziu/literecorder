@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LiteRecorder — 軽い、Android の録画アプリ</title>
-  <meta name="description" content="LiteRecorder は、約260KBの超軽量な Android 録画・録音アプリ。MP4 で画面を、MP3・M4A で音だけを。一時停止、画面に浮かぶボタン、ボイスチェンジャーまで、必要なものだけ。" />
+  <meta name="description" content="LiteRecorder は、約290KBの超軽量な Android 録画・録音アプリ。MP4 で画面を、MP3・M4A で音だけを。一時停止、分割保存、トリミング、ボイスチェンジャーまで、必要なものだけ。" />
   <meta property="og:title" content="LiteRecorder — 軽い、Android の録画アプリ" />
-  <meta property="og:description" content="約260KB。画面も、声も、ワンタップで。" />
+  <meta property="og:description" content="約290KB。画面も、声も、ワンタップで。" />
   <meta property="og:image" content="https://kaikomziu.github.io/literecorder/icon.png" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="icon" href="favicon.png" />
@@ -79,7 +79,8 @@
     .chip { background: #fff; border-radius: 980px; padding: 7px 15px; font-size: 15px; font-weight: 500; }
     .chip.on { background: var(--accent); color: #fff; }
 
-    .tile img.shot { margin-top: auto; padding-top: 24px; width: 100%; border-radius: 14px; }
+    .tile img.shot { margin-top: auto; width: 100%; max-height: 340px; object-fit: cover; object-position: top; border-radius: 14px; }
+    .tile img.shot { margin-top: 24px; }
     .tile img.pill { margin: auto auto 0; padding-top: 24px; width: 260px; max-width: 100%; }
     .tile.dark-tile { background: #1d1d1f; color: #f5f5f7; }
     .tile.dark-tile p { color: #a1a1a6; }
@@ -156,10 +157,10 @@
 
   <section class="hero center">
     <div class="wrap">
-      <a class="news reveal" href="#new"><b>New</b> 1.1 — 一時停止・浮かぶボタン・M4A ほか ›</a>
+      <a class="news reveal" href="#new"><b>New</b> 1.3 — トリミング・分割保存・声の追加ほか ›</a>
       <p class="eyebrow reveal">LiteRecorder</p>
       <h1 class="reveal">録画は、<br />軽いほうがいい。</h1>
-      <p class="lead reveal">約260KB。画面も、声も、ワンタップで。</p>
+      <p class="lead reveal">約290KB。画面も、声も、ワンタップで。</p>
       <div class="ctas reveal">
         <a class="btn" href="https://github.com/kaikomziu/literecorder/releases/latest/download/LiteRecorder.apk">無料でダウンロード</a>
         <a class="more" href="#features">詳しく見る</a>
@@ -172,7 +173,7 @@
     <div class="wrap">
       <h2 class="reveal">小さい。でも、ちゃんと録れる。</h2>
       <div class="grid3">
-        <div class="stat reveal"><b>260KB</b><span>アプリ全体のサイズ</span></div>
+        <div class="stat reveal"><b>290KB</b><span>アプリ全体のサイズ</span></div>
         <div class="stat reveal"><b>MP4 / MP3 / M4A</b><span>画面録画も、音だけ録音も</span></div>
         <div class="stat reveal"><b>0</b><span>広告・アカウント登録</span></div>
       </div>
@@ -181,22 +182,21 @@
 
   <section id="new" class="center" style="background:var(--bg2);padding-top:40px">
     <div class="wrap">
-      <p class="eyebrow reveal">LiteRecorder 1.1</p>
-      <h2 class="reveal">13 の新機能。<br />それでも、軽いまま。</h2>
+      <p class="eyebrow reveal">LiteRecorder 1.3</p>
+      <h2 class="reveal">録ったあとも、軽く。<br />長く録っても、安心。</h2>
       <div class="newgrid">
-        <div class="reveal"><b>横向きで録る</b><span>横画面のゲームも全面で</span></div>
-        <div class="reveal"><b>一時停止</b><span>いらない場面をとばす</span></div>
-        <div class="reveal"><b>浮かぶボタン</b><span>どのアプリからでも操作</span></div>
-        <div class="reveal"><b>カウントダウン</b><span>3秒・5秒で写り込み防止</span></div>
-        <div class="reveal"><b>クイック設定</b><span>通知パネルから1タップ</span></div>
-        <div class="reveal"><b>音量バランス</b><span>声とゲーム音を調整</span></div>
-        <div class="reveal"><b>ノイズ除去</b><span>マイクの雑音をカット</span></div>
-        <div class="reveal"><b>試し聴き</b><span>イヤホンで声を確認</span></div>
-        <div class="reveal"><b>声の高さを調整</b><span>半音単位で 1〜12</span></div>
-        <div class="reveal"><b>録画一覧</b><span>再生・共有・削除</span></div>
-        <div class="reveal"><b>M4A</b><span>MP3 より小さい音声</span></div>
-        <div class="reveal"><b>自動停止</b><span>時間・サイズの上限</span></div>
-        <div class="reveal"><b>English</b><span>英語表示に対応</span></div>
+        <div class="reveal"><b>トリミング</b><span>始めと終わりをカット</span></div>
+        <div class="reveal"><b>音だけ取り出す</b><span>動画から M4A を一瞬で</span></div>
+        <div class="reveal"><b>名前の変更</b><span>一覧からそのまま</span></div>
+        <div class="reveal"><b>分割保存</b><span>5・10・30分ごとに保存</span></div>
+        <div class="reveal"><b>強制終了でも救出</b><span>MP3 は途中まで残る</span></div>
+        <div class="reveal"><b>空き容量を見張る</b><span>足りなくなったら停止</span></div>
+        <div class="reveal"><b>レベルメーター</b><span>マイクが入っているか一目で</span></div>
+        <div class="reveal"><b>ショートカット</b><span>アイコン長押しで開始</span></div>
+        <div class="reveal"><b>声が 3 つ増えた</b><span>ラジオ・電話・宇宙人</span></div>
+        <div class="reveal"><b>録画中モニター</b><span>イヤホンで自分の声を</span></div>
+        <div class="reveal"><b>おまかせ設定</b><span>SNS・ゲーム・標準・省容量</span></div>
+        <div class="reveal"><b>これまでの機能</b><span>一時停止・浮かぶボタン・英語ほか</span></div>
       </div>
     </div>
   </section>
@@ -222,9 +222,9 @@
         </div>
         <div class="tile reveal">
           <p class="k">画質</p>
-          <h3>横向きのゲームも、全面で。</h3>
-          <p>向き（縦・横）、解像度、フレームレート、画質を選ぶだけ。H.264 でコンパクトに保存します。</p>
-          <div class="chips"><span class="chip">縦</span><span class="chip on">横</span><span class="chip on">720p</span><span class="chip on">30fps</span><span class="chip">60fps</span></div>
+          <h3>迷ったら、おまかせ。</h3>
+          <p>「SNS向け」「ゲーム」「標準」「省容量」を選ぶだけ。横向きのゲームも全面で録れます。もちろん細かく決めることも。</p>
+          <img class="shot" src="presets.webp" alt="おまかせ設定と映像の設定" width="600" height="716" loading="lazy" />
         </div>
         <div class="tile dark-tile reveal">
           <p class="k">浮かぶボタン</p>
@@ -233,10 +233,10 @@
           <img class="pill" src="pill.png" alt="一時停止・停止ボタンと経過時間" width="392" height="125" loading="lazy" />
         </div>
         <div class="tile reveal">
-          <p class="k">録画一覧</p>
-          <h3>見る、送る、消す。</h3>
-          <p>録ったファイルはアプリの中で一覧に。保存先はいつもの Movies / Music フォルダです。</p>
-          <img class="shot" src="screen3.webp" alt="録画一覧の画面" width="600" height="566" loading="lazy" />
+          <p class="k">録画一覧・編集</p>
+          <h3>見る、切る、送る。</h3>
+          <p>トリミング、動画から音だけ取り出し、名前の変更まで。再エンコードしないので一瞬で終わります。</p>
+          <img class="shot" src="screen3.webp" alt="録画一覧とメニュー" width="600" height="705" loading="lazy" />
         </div>
         <div class="tile reveal">
           <p class="k">カウントダウン・クイック設定</p>
@@ -245,10 +245,10 @@
           <div class="chips"><span class="chip">なし</span><span class="chip on">3秒</span><span class="chip">5秒</span></div>
         </div>
         <div class="tile reveal">
-          <p class="k">自動停止</p>
+          <p class="k">分割保存・自動停止</p>
           <h3>撮りっぱなしでも、安心。</h3>
-          <p>時間（5分〜1時間）やサイズ（100MB〜1GB）の上限に達したら、自動で止めて保存します。</p>
-          <div class="chips"><span class="chip on">10分</span><span class="chip">30分</span><span class="chip on">500MB</span></div>
+          <p>5・10・30分ごとに別ファイルへ。途中でアプリが終了しても失うのは最後の1ファイルだけ。時間・サイズ・空き容量の上限でも自動で止まります。</p>
+          <div class="chips"><span class="chip on">10分ごと</span><span class="chip">30分</span><span class="chip on">500MB</span></div>
         </div>
       </div>
     </div>
@@ -265,10 +265,12 @@
           <li class="reveal"><b>低い声</b><span>落ち着いた低めの声に、幅も調整</span></li>
           <li class="reveal"><b>ロボ</b><span>機械っぽい金属的な声に</span></li>
           <li class="reveal"><b>エコー</b><span>広い場所で話しているように</span></li>
-          <li class="reveal"><b>試し聴き</b><span>録る前にイヤホンで自分の声を確認</span></li>
+          <li class="reveal"><b>ラジオ・電話</b><span>こもった無線や受話器の声に</span></li>
+          <li class="reveal"><b>宇宙人</b><span>少し高くて揺れる不思議な声に</span></li>
+          <li class="reveal"><b>試し聴き</b><span>録る前も、録画中も、イヤホンで自分の声を確認</span></li>
         </ul>
       </div>
-      <div class="phone reveal"><img src="screen2.webp" alt="音とボイスチェンジャーの設定画面" width="600" height="1122" loading="lazy" /></div>
+      <div class="phone reveal"><img src="screen2.webp" alt="音とボイスチェンジャーの設定画面" width="600" height="1000" loading="lazy" /></div>
     </div>
   </section>
 

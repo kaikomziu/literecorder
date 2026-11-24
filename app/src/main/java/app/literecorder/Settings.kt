@@ -18,7 +18,7 @@ enum class AudioSrc {
 }
 
 /** ボイスチェンジャー（マイクにだけかかる） */
-enum class Voice { OFF, HIGH, LOW, ROBOT, ECHO }
+enum class Voice { OFF, HIGH, LOW, ROBOT, ECHO, RADIO, PHONE, ALIEN }
 
 /** 設定（SharedPreferences にそのまま保存） */
 class Settings(ctx: Context) {
@@ -122,6 +122,11 @@ class Settings(ctx: Context) {
     var limitMb: Int
         get() = int("limit_mb", 0)
         set(v) = setInt("limit_mb", v)
+
+    /** 録画中に自分の声（エフェクト後）をイヤホンで聞く */
+    var monitor: Boolean
+        get() = p.getBoolean("monitor", false)
+        set(v) = p.edit().putBoolean("monitor", v).apply()
 
     /** 分割保存の間隔（分、0=分割しない） */
     var splitMin: Int

@@ -38,6 +38,8 @@ class AudioEngine(
     private val micGain = s.micGain / 100f
     private val intGain = s.internalGain / 100f
     private var ns: NoiseSuppressor? = null
+    /** 録画中のモニター（イヤホンがつながっているときだけ） */
+    private var monitor: android.media.AudioTrack? = null
     private var mic: AudioRecord? = null
     private var internal: AudioRecord? = null
     private val micFifo = Fifo(RATE / 3, 1)         // 約 0.33 秒ぶん（モノラル）
@@ -74,20 +76,41 @@ class AudioEngine(
             check(internal!!.state == AudioRecord.STATE_INITIALIZED) { ctx.getString(R.string.err_internal) }
         }
 
+        if (src.usesMic && s.monitor && VoicePreview.headphonesConnected(ctx)) {
+            monitor = runCatching {
+                android.media.AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build(),
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder().setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build(),
+                    )
+                    .setBufferSizeInBytes(
+                        android.media.AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT) * 2,
+                    )
+                    .setPerformanceMode(android.media.AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                    .build().apply { play() }
+            }.getOrNull()
+        }
+
         running = true
-        mic?.let { rec -> rec.startRecording(); threads += Thread({ readLoop(rec, micFifo, fx) }, "lr-mic") }
+        mic?.let { rec -> rec.startRecording(); threads += Thread({ readLoop(rec, micFifo, fx, monitor) }, "lr-mic") }
         internal?.let { rec -> rec.startRecording(); threads += Thread({ readLoop(rec, intFifo, null) }, "lr-int") }
         threads += Thread({ mixLoop() }, "lr-mix")
         threads.forEach { it.start() }
     }
 
-    private fun readLoop(rec: AudioRecord, fifo: Fifo, fx: VoiceChanger?) {
+    private fun readLoop(rec: AudioRecord, fifo: Fifo, fx: VoiceChanger?, mon: android.media.AudioTrack? = null) {
         val buf = ShortArray(2048)
         while (running) {
             val n = rec.read(buf, 0, buf.size)
             if (n > 0) {
                 fx?.process(buf, n)
                 fifo.push(buf, n)
+                // モニターは書けるぶんだけ書く（録音を待たせない）
+                mon?.write(buf, 0, n, android.media.AudioTrack.WRITE_NON_BLOCKING)
             } else if (n < 0) {
                 break
             }
@@ -151,6 +174,8 @@ class AudioEngine(
         runCatching { mic?.stop() }
         runCatching { internal?.stop() }
         threads.forEach { it.join(2000) }
+        runCatching { monitor?.stop() }
+        runCatching { monitor?.release() }
         runCatching { ns?.release() }
         runCatching { mic?.release() }
         runCatching { internal?.release() }

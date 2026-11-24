@@ -149,6 +149,7 @@ class VideoEncoder(
         var wasPaused = false
         var needKey = false
         var lastKeyRequestNs = 0L
+        var lastKeyOutNs = System.nanoTime()
         try {
             while (true) {
                 val idx = codec.dequeueOutputBuffer(info, 10_000)
@@ -159,7 +160,11 @@ class VideoEncoder(
                 }
                 wasPaused = paused
                 // 分割の切り替え時刻になったらキーフレームを出してもらう（画面が止まっていると来ないため）
-                if (sink.wantsKeyFrame() && System.nanoTime() - lastKeyRequestNs > 500_000_000L) {
+                // 画面が止まっているとキーフレームが何十秒も出ない端末があるので、2 秒ごとには出してもらう
+                // （トリミングや分割の位置がずれすぎないように）
+                val now = System.nanoTime()
+                val keyDue = now - lastKeyOutNs > 2_000_000_000L
+                if ((keyDue || sink.wantsKeyFrame()) && now - lastKeyRequestNs > 500_000_000L) {
                     lastKeyRequestNs = System.nanoTime()
                     runCatching { codec.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) }
                 }
@@ -167,6 +172,7 @@ class VideoEncoder(
                     writer.add(codec.outputFormat)
                 } else if (idx >= 0) {
                     val isKey = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
+                    if (isKey) lastKeyOutNs = System.nanoTime()
                     if (paused) {
                         needKey = true // 一時停止中のフレームは捨てる
                     } else if (needKey && !isKey) {

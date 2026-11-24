@@ -73,6 +73,8 @@ class MainActivity : Activity() {
     private lateinit var segLimitTime: Seg
     private lateinit var segLimitSize: Seg
     private lateinit var segSplit: Seg
+    private lateinit var segMonitor: Seg
+    private lateinit var segPreset: Seg
 
     private val kbpsList = listOf(96, 128, 192)
     private val resList = listOf(1080, 720, 480)
@@ -80,6 +82,13 @@ class MainActivity : Activity() {
     private val limitTimeList = listOf(0, 5, 10, 30, 60)
     private val limitSizeList = listOf(0, 100, 500, 1000)
     private val splitList = listOf(0, 5, 10, 30)
+    /** おまかせ設定: 向き, 解像度, fps, 画質 */
+    private val presets = listOf(
+        listOf(1, 1080, 30, 2), // SNS向け（縦）
+        listOf(2, 720, 60, 1),  // ゲーム（横・60fps）
+        listOf(0, 720, 30, 1),  // 標準
+        listOf(0, 480, 30, 0),  // 省容量
+    )
 
     private val tick = object : Runnable {
         override fun run() {
@@ -292,6 +301,9 @@ class MainActivity : Activity() {
         sliderPitch.set(if (s.voice == Voice.LOW) s.pitchDown else s.pitchUp)
         sliderPitch.show(pitched && src.usesMic)
         previewBtn.visibility = if (src.usesMic) View.VISIBLE else View.GONE
+        segMonitor.select(if (s.monitor) 0 else 1)
+        segMonitor.show(src.usesMic)
+        segPreset.select(presets.indexOf(listOf(s.orientation, s.shortSide, s.fps, s.quality)))
 
         videoCard.visibility = if (video) View.VISIBLE else View.GONE
         segOrient.select(s.orientation)
@@ -468,7 +480,10 @@ class MainActivity : Activity() {
         voice.addView(Ui.sectionTitle(this, t(R.string.sec_voice)))
         segVoice = Seg(
             this, t(R.string.set_voice),
-            listOf(t(R.string.voice_off), t(R.string.voice_high), t(R.string.voice_low), t(R.string.voice_robot), t(R.string.voice_echo)),
+            listOf(
+                t(R.string.voice_off), t(R.string.voice_high), t(R.string.voice_low), t(R.string.voice_robot),
+                t(R.string.voice_echo), t(R.string.voice_radio), t(R.string.voice_phone), t(R.string.voice_alien),
+            ),
             ce,
         ) { edit { s.voice = Voice.entries[it] } }
         sliderPitch = Slider(this, {
@@ -483,9 +498,14 @@ class MainActivity : Activity() {
             setPadding(0, dpi(11), 0, dpi(11))
             setOnClickListener { togglePreview() }
         }
+        segMonitor = Seg(this, t(R.string.set_monitor), listOf(t(R.string.on), t(R.string.off)), ce) {
+            edit { s.monitor = it == 0 }
+        }
+        segMonitor.setHint(t(R.string.hint_monitor))
         voice.addView(segVoice.root)
         voice.addView(sliderPitch.root)
         voice.addView(previewBtn, Ui.matchWrap(dpi(14)))
+        voice.addView(segMonitor.root)
         refreshPreviewButton()
         settingsBox.addView(voice, Ui.matchWrap(dpi(12)))
 
@@ -502,6 +522,19 @@ class MainActivity : Activity() {
         segQuality = Seg(this, t(R.string.set_quality), listOf(t(R.string.q_low), t(R.string.q_mid), t(R.string.q_high)), ce) {
             edit { s.quality = it }
         }
+        segPreset = Seg(
+            this, t(R.string.set_preset),
+            listOf(t(R.string.preset_sns), t(R.string.preset_game), t(R.string.preset_std), t(R.string.preset_small)), ce,
+        ) {
+            val p = presets[it]
+            edit {
+                s.orientation = p[0]
+                s.shortSide = p[1]
+                s.fps = p[2]
+                s.quality = p[3]
+            }
+        }
+        videoCard.addView(segPreset.root)
         videoCard.addView(segOrient.root)
         videoCard.addView(segRes.root)
         videoCard.addView(segFps.root)

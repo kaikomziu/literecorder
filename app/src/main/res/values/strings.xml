@@ -110,4 +110,26 @@
     <string name="sc_video_long">Start screen recording</string>
     <string name="sc_audio_short">Record audio</string>
     <string name="sc_audio_long">Start audio recording</string>
+    <string name="voice_radio">Radio</string>
+    <string name="voice_phone">Phone</string>
+    <string name="voice_alien">Alien</string>
+    <string name="set_monitor">Hear yourself while recording (headphones)</string>
+    <string name="hint_monitor">Only plays when headphones are connected</string>
+    <string name="set_preset">Presets</string>
+    <string name="preset_sns">Social</string>
+    <string name="preset_game">Game</string>
+    <string name="preset_std">Standard</string>
+    <string name="preset_small">Small</string>
+    <string name="more">More</string>
+    <string name="rename">Rename</string>
+    <string name="trim">Trim</string>
+    <string name="extract_audio">Extract audio</string>
+    <string name="trim_start">Start: %1$s</string>
+    <string name="trim_end">End: %1$s</string>
+    <string name="trim_hint_video">Videos can only start at a keyframe, so the start may move up to about 2 seconds earlier</string>
+    <string name="save">Save</string>
+    <string name="working">Saving…</string>
+    <string name="no_audio_track">This video has no audio</string>
+    <string name="rename_failed">Couldn\'t rename this file</string>
+    <string name="edit_failed">Couldn\'t save the file</string>
 </resources>

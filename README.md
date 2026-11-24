@@ -1,15 +1,15 @@
 # LiteRecorder
 
-Kotlin 製の超軽量な Android 録画・録音アプリ（APK 約 270KB、AndroidX なし、インターネット権限なし）。
+Kotlin 製の超軽量な Android 録画・録音アプリ（APK 約 290KB、AndroidX なし、インターネット権限なし）。
 
 - サイト: https://kaikomziu.github.io/literecorder/
 - ダウンロード: [最新版の APK](https://github.com/kaikomziu/literecorder/releases/latest/download/LiteRecorder.apk)（[すべてのバージョン](https://github.com/kaikomziu/literecorder/releases)）
 
 ## できること
-- **MP4**: 画面録画（H.264）＋音声（AAC）。向き（開始時のまま / 縦 / 横）・解像度・30/60fps・画質を選べる
+- **MP4**: 画面録画（H.264）＋音声（AAC）。向き（開始時のまま / 縦 / 横）・解像度・30/60fps・画質を選べる。おまかせ設定（SNS向け / ゲーム / 標準 / 省容量）。キーフレームは最低 2 秒ごと
 - **MP3 / M4A**: 音だけ録音（96/128/192kbps）。MP3 は jump3r（LAME の Java 移植）、M4A は端末の AAC エンコーダ
 - 録る音: なし / マイク / 内部音 / 両方。それぞれの音量（0〜200%）とマイクのノイズ除去
-- ボイスチェンジャー（マイクにだけかかる）: 高い声 / 低い声（半音 1〜12 で調整）/ ロボ / エコー。イヤホンで試し聴きできる
+- ボイスチェンジャー（マイクにだけかかる）: 高い声 / 低い声（半音 1〜12 で調整）/ ロボ / エコー / ラジオ / 電話 / 宇宙人。イヤホンで試し聴き・録画中のモニターができる
 - 一時停止・再開（アプリ・通知・浮かぶボタン）
 - 画面に浮かぶ操作ボタン（「他のアプリの上に表示」の許可が要る）
 - 録画前のカウントダウン（なし / 3秒 / 5秒）
@@ -18,7 +18,7 @@ Kotlin 製の超軽量な Android 録画・録音アプリ（APK 約 270KB、And
 - 分割保存（5 / 10 / 30 分ごと）。強制終了しても失うのは最後の1ファイルだけ。書きかけの MP3 は次回起動時に救出、MP4 / M4A は削除
 - レベルメーター（アプリと浮かぶボタン）
 - アイコン長押しのショートカット（画面を録画 / 音だけ録音）
-- 録画一覧（再生・共有・削除）
+- 録画一覧（再生・共有・名前の変更・削除）と、再エンコードしない編集（トリミング・動画から音だけ取り出す）
 - 日本語 / English（Android 13 以降はアプリごとの言語設定にも対応）
 
 保存先: 動画 `Movies/LiteRecorder`、音声 `Music/LiteRecorder`
@@ -55,6 +55,7 @@ MP3 エンコードに [jump3r](https://github.com/Sciss/jump3r)（LGPL）を使
 | `Overlay.kt` | 画面に浮かぶ操作ボタンとカウントダウン |
 | `RecordTileService.kt` | クイック設定タイル |
 | `VoicePreview.kt` | ボイスチェンジャーの試し聴き |
-| `LibraryActivity.kt` | 録画一覧 |
+| `LibraryActivity.kt` | 録画一覧（メニュー・名前変更・トリミング画面） |
+| `Editor.kt` | トリミングと音の取り出し（MediaExtractor＋MediaMuxer、MP3 はフレーム単位でコピー） |
 | `Ui.kt` | 画面部品（カード・切り替えボタン・スライダー） |
 | `Settings.kt` | 設定 |

@@ -74,12 +74,18 @@ class Seg(
 
     init {
         root.addView(Ui.label(ctx, title))
-        val row = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            background = Ui.rounded(Ui.SEG_BG, Ui.dp(ctx, 10f))
-            setPadding(Ui.dpi(ctx, 3), Ui.dpi(ctx, 3), Ui.dpi(ctx, 3), Ui.dpi(ctx, 3))
-        }
+        // 6 個以上は 4 個ずつの段に分ける（文字が詰まりすぎないように）
+        val perRow = if (labels.size > 5) 4 else labels.size
+        var row = LinearLayout(ctx)
         labels.forEachIndexed { i, label ->
+            if (i % perRow == 0) {
+                row = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    background = Ui.rounded(Ui.SEG_BG, Ui.dp(ctx, 10f))
+                    setPadding(Ui.dpi(ctx, 3), Ui.dpi(ctx, 3), Ui.dpi(ctx, 3), Ui.dpi(ctx, 3))
+                }
+                root.addView(row, Ui.matchWrap(if (i == 0) 0 else Ui.dpi(ctx, 6)))
+            }
             val tv = TextView(ctx).apply {
                 text = label
                 textSize = 13f
@@ -94,7 +100,9 @@ class Seg(
             items += tv
             row.addView(tv, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         }
-        root.addView(row)
+        // 最後の段が短いときは空きで幅をそろえる
+        val rest = (perRow - labels.size % perRow) % perRow
+        repeat(rest) { row.addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f)) }
         root.addView(hintView)
     }
 
