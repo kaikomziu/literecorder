@@ -132,4 +132,6 @@
     <string name="no_audio_track">This video has no audio</string>
     <string name="rename_failed">Couldn\'t rename this file</string>
     <string name="edit_failed">Couldn\'t save the file</string>
+    <string name="set_av_offset">Audio sync: %1$s ms</string>
+    <string name="hint_av_offset">If sound comes too early (common in rhythm games), move to +. With Bluetooth headphones, +150 to +250 ms is typical.</string>
 </resources>

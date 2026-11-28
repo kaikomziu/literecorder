@@ -70,6 +70,11 @@ class Settings(ctx: Context) {
         get() = int("int_gain", 100)
         set(v) = setInt("int_gain", v)
 
+    /** 音ズレ補正（ms、-500〜+500）。＋で音を遅らせる */
+    var avOffsetMs: Int
+        get() = int("av_offset_ms", 0)
+        set(v) = setInt("av_offset_ms", v)
+
     var noiseSuppress: Boolean
         get() = p.getBoolean("noise_suppress", false)
         set(v) = p.edit().putBoolean("noise_suppress", v).apply()

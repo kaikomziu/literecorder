@@ -130,4 +130,6 @@
     <string name="no_audio_track">この動画には音が入っていません</string>
     <string name="rename_failed">名前を変えられませんでした</string>
     <string name="edit_failed">保存できませんでした</string>
+    <string name="set_av_offset">音ズレ補正: %1$s ms</string>
+    <string name="hint_av_offset">音が早く聞こえるとき（音ゲーなど）は＋へ。Bluetooth イヤホンで遊んでいるときは +150〜250ms が目安です</string>
 </resources>

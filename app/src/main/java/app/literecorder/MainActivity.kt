@@ -59,6 +59,7 @@ class MainActivity : Activity() {
     private lateinit var sliderMic: Slider
     private lateinit var sliderInt: Slider
     private lateinit var segNs: Seg
+    private lateinit var sliderOffset: Slider
     private lateinit var segVoice: Seg
     private lateinit var sliderPitch: Slider
     private lateinit var previewBtn: TextView
@@ -292,6 +293,8 @@ class MainActivity : Activity() {
         sliderMic.show(src.usesMic)
         sliderInt.set(s.internalGain)
         sliderInt.show(src.usesInternal)
+        sliderOffset.set(s.avOffsetMs / 10)
+        sliderOffset.show(src != AudioSrc.NONE)
         segNs.select(if (s.noiseSuppress) 0 else 1)
         segNs.show(src.usesMic)
 
@@ -472,7 +475,14 @@ class MainActivity : Activity() {
         sound.addView(segAudio.root)
         sound.addView(sliderMic.root)
         sound.addView(sliderInt.root)
+        // 音ズレ補正（10ms 刻み）。音ゲーは音が出る時刻に絵を合わせるので、内部音が早く入ることがある
+        sliderOffset = Slider(this, { v ->
+            val ms = v * 10
+            t(R.string.set_av_offset, if (ms > 0) "+$ms" else "$ms")
+        }, -50, 50, ce) { s.avOffsetMs = it * 10 }
         sound.addView(segNs.root)
+        sound.addView(sliderOffset.root)
+        sound.addView(Ui.hint(this, t(R.string.hint_av_offset)))
         settingsBox.addView(sound, Ui.matchWrap(dpi(12)))
 
         // ボイスチェンジャー

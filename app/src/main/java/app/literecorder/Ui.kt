@@ -154,7 +154,8 @@ class Slider(
     val root = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     private val label = Ui.label(ctx, "")
     private val bar = SeekBar(ctx).apply {
-        this.max = max - min
+        // apply の中の min は SeekBar.min になってしまうので、Slider の min を明示する
+        this.max = max - this@Slider.min
         progressTintList = ColorStateList.valueOf(Ui.ACCENT)
         thumbTintList = ColorStateList.valueOf(Color.WHITE)
         progressBackgroundTintList = ColorStateList.valueOf(Ui.SEG_BG)

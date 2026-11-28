@@ -173,13 +173,14 @@ class VideoEncoder(
                 } else if (idx >= 0) {
                     val isKey = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
                     if (isKey) lastKeyOutNs = System.nanoTime()
-                    if (paused) {
-                        needKey = true // 一時停止中のフレームは捨てる
+                    val frameNs = info.presentationTimeUs * 1000 // このフレームが描かれた時刻
+                    if (clock.wasPausedAt(frameNs)) {
+                        needKey = true // 一時停止中に描かれたフレームは捨てる
                     } else if (needKey && !isKey) {
                         // キーフレームが来るまで捨てる
                     } else {
                         needKey = false
-                        codec.getOutputBuffer(idx)?.let { writer.write(it, info, baseUs, clock.pausedUs()) }
+                        codec.getOutputBuffer(idx)?.let { writer.write(it, info, baseUs, clock.pausedUsBefore(frameNs)) }
                     }
                     codec.releaseOutputBuffer(idx, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
@@ -221,14 +222,16 @@ class VideoEncoder(
 }
 
 /**
- * 一時停止の時計。止まっていた時間の合計を、映像の時刻から引くのに使う。
- * （音声は止まっている間のデータを捨てて、サンプル数から時刻を作るので自然にそろう）
+ * 一時停止の時計。止まっていた区間を System.nanoTime で覚えておき、
+ * 映像も音も「その瞬間が止まっていたか」「それまでに何秒止まっていたか」を録れた時刻で判断する。
+ * （音は少し遅れて処理されるので、今止まっているかではなく、録れた時刻で見ないとずれる）
  */
 class PauseClock {
     @Volatile var paused = false
         private set
     private var pausedTotalNs = 0L
     private var pauseStartNs = 0L
+    private val intervals = ArrayList<LongArray>() // 終わった一時停止の [開始, 終了]
 
     @Synchronized
     fun pause() {
@@ -240,13 +243,27 @@ class PauseClock {
     @Synchronized
     fun resume() {
         if (!paused) return
-        pausedTotalNs += System.nanoTime() - pauseStartNs
+        val now = System.nanoTime()
+        pausedTotalNs += now - pauseStartNs
+        intervals += longArrayOf(pauseStartNs, now)
         paused = false
     }
 
-    /** これまでに止まっていた時間（µs、今止まっている分は含まない） */
+    /** 時刻 tNs は一時停止中だったか */
     @Synchronized
-    fun pausedUs() = pausedTotalNs / 1000
+    fun wasPausedAt(tNs: Long): Boolean {
+        if (paused && tNs >= pauseStartNs) return true
+        return intervals.any { tNs >= it[0] && tNs < it[1] }
+    }
+
+    /** 時刻 tNs までに止まっていた時間（µs） */
+    @Synchronized
+    fun pausedUsBefore(tNs: Long): Long {
+        var sum = 0L
+        for (iv in intervals) if (iv[0] < tNs) sum += minOf(iv[1], tNs) - iv[0]
+        if (paused && pauseStartNs < tNs) sum += tNs - pauseStartNs
+        return sum / 1000
+    }
 
     /** 開始時刻 startNs からの、止まっていた時間を除いた経過（ms） */
     @Synchronized

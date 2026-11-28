@@ -12,8 +12,8 @@ android {
         // 内部音声の録音（AudioPlaybackCapture）と MediaStore の相対パス保存が使える Android 10 以上
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 5
+        versionName = "1.3.1"
     }
 
     buildTypes {
